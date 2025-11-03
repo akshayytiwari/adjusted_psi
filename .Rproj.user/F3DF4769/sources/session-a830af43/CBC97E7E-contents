@@ -1,0 +1,19 @@
+---
+title: "Validation of corrected ψ formalism against synthetic and real data"
+author: "Akshay Tiwari et al."
+output:
+  html_document:
+    toc: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+source("../scripts/15_synthetic_validation_grid.R")
+source("../scripts/16_synthetic_validation_studies.R")
+source("../scripts/17_synthetic_validation_plot.R")
+# source("../scripts/10_generation_psi_zero_phi.R")  # synthetic()
+# source("../scripts/13__zero_phi.R")        # formalism()
+# source("../scripts/14_beta_dis.R")                  # weak_prior replacement if needed
+```
+

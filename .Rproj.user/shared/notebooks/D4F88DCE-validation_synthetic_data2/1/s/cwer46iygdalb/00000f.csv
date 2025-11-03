@@ -1,0 +1,182 @@
+"0","path_data <- ""~/ubuntu_research/Research/adjusted_psi/data/final_data"""
+"0","setwd(path_data)"
+"0","df <- read.csv(""./data_v8.csv"")"
+"0",""
+"0","results_list <- vector(""list"", nrow(df))"
+"0",""
+"0","# Sourcing functions"
+"0","path_code <- ""~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"""
+"0","setwd(path_code)"
+"0","source(""generation_psi.R"")"
+"0","source(""formalism.R"")"
+"0",""
+"0","set.seed(123)"
+"0","for (i in seq_len(nrow(df))) {"
+"0","  study <- df[i, ]"
+"0","  n <- study$n"
+"0","  n_iter_mc <- 100000"
+"0","  rho <- study$rho_c"
+"0","  psi <- study$psi_c"
+"0","  phi <- study$phi_c"
+"0","  "
+"0","  sen_a <- study$alpha_a"
+"0","  sen_b <- study$alpha_b"
+"0","  spe_a <- study$beta_a"
+"0","  spe_b <- study$beta_b"
+"0","  "
+"0","  # --- 1. Simulate data for this study"
+"0","  out_synthetic <- synthetic(n, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)"
+"0","  n_sym_pos <- out_synthetic$n_sym_pos"
+"0","  n_asym_pos <- out_synthetic$n_asym_pos"
+"0","  n_sym_neg <- out_synthetic$n_sym_neg"
+"0","  n_asym_neg <- out_synthetic$n_asym_neg"
+"0","  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg"
+"0","  "
+"0","  ## Crude estimates"
+"0","  rho_c <- (n_sym_pos + n_asym_pos) / n_total"
+"0","  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)"
+"0","  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)"
+"0","  "
+"0","  # --- 2. Analytical formalism Monte Carlo ---"
+"0","  out_form <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, "
+"0","                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)"
+"0","  "
+"0","  # Store results in data frame"
+"0","  "
+"0","  vars <- list("
+"0","    article = study$article,"
+"0","    n = study$n,"
+"0","    "
+"0","    psi_form_median = as.numeric(quantile(out_form$psi_form, 0.5)),"
+"0","    psi_form_lower = as.numeric(quantile(out_form$psi_form, 0.25)),"
+"0","    psi_form_upper = as.numeric(quantile(out_form$psi_form, 0.75))"
+"0","  )"
+"0","  "
+"0","  lapply(vars, function(v)"
+"0","    if (is.null(v) |"
+"0","        any(is.na(v)))"
+"0","      stop(""Some result variable is NULL or NA""))"
+"0","  "
+"0","  # Then construct your data.frame as usual"
+"0","  study_res <- as.data.frame(vars)"
+"0","  "
+"0","  results_list[[i]] <- study_res"
+"0","  "
+"0","  cat(sprintf(""Study %s completed \n"", study$article))"
+"0","}"
+"1","Study Menezes et al. completed 
+"
+"1","Study Maura da Silva et al. completed 
+"
+"1","Study Terças-Trettel completed 
+"
+"1","Study Moura de Albuquerque et al. completed 
+"
+"1","Study Moura de Albuquerque et al. completed 
+"
+"1","Study Moura de Albuquerque et al. completed 
+"
+"1","Study Nwosu et al. completed 
+"
+"1","Study Vial et al. completed 
+"
+"1","Study Li et al completed 
+"
+"1","Study Garay et al. completed 
+"
+"1","Study Serrano-Coll et al. completed 
+"
+"1","Study Espenhain et al completed 
+"
+"1","Study Carrat et al. completed 
+"
+"1","Study Rouquette et al. completed 
+"
+"1","Study Beaumont et al. completed 
+"
+"1","Study Santos-Hovener et al. completed 
+"
+"1","Study Weis et al. completed 
+"
+"1","Study Merkely et al. completed 
+"
+"1","Study Murhekar et al. completed 
+"
+"1","Study Selvaraju et al. completed 
+"
+"1","Study Kumar et al. completed 
+"
+"1","Study Sharma et al. completed 
+"
+"1","Study Sharma et al. completed 
+"
+"1","Study Sharma et al. completed 
+"
+"1","Study Kumar et al. completed 
+"
+"1","Study Khan et al. completed 
+"
+"1","Study Poustchi et al. completed 
+"
+"1","Study Shadmani et al. completed 
+"
+"1","Study Heavey et al. completed 
+"
+"1","Study Melotti et al. completed 
+"
+"1","Study Pagani et al. completed 
+"
+"1","Study Ngere et al. completed 
+"
+"1","Study Abdul-Raheem et al. completed 
+"
+"1","Study Sagara et al. completed 
+"
+"1","Study Basto-Abreu et al. completed 
+"
+"1","Study Arnaldo et al. completed 
+"
+"1","Study Arnaldo et al. completed 
+"
+"1","Study Arnaldo et al. completed 
+"
+"1","Study Vos et al. completed 
+"
+"1","Study Okpala et al. completed 
+"
+"1","Study Nisar et al. completed 
+"
+"1","Study Huamani et al. completed 
+"
+"1","Study Diaz-Velez et al. completed 
+"
+"1","Study Reyes-Vega et al. completed 
+"
+"1","Study Moyano et al. completed 
+"
+"1","Study Castro et al. completed 
+"
+"1","Study Kislaya et al. completed 
+"
+"1","Study Talla et al. completed 
+"
+"1","Study Perez-Gomez et al. completed 
+"
+"1","Study Richard et al. completed 
+"
+"1","Study Alsuwaidi et al. completed 
+"
+"1","Study Ward et al. completed 
+"
+"1","Study Ward et al. completed 
+"
+"1","Study Ward et al. completed 
+"
+"1","Study Sullivan et al. completed 
+"
+"1","Study Lamba et al. completed 
+"
+"1","Study Chamberlain et al. completed 
+"
+"1","Study Pathela et al. completed 
+"

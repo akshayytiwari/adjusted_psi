@@ -1,0 +1,4 @@
+study,n,sp,rho_c,asym_sp,psi_c,sn,sn_n_prop,asym_sn,asym_sn_prop,sym_sn,phi_c,alpha,alpha_l,alpha_u,beta,beta_l,beta_u
+Friedman et al. Residents,188,101,0.537,95,0.941,87,0.463,85,0.977,2,0.023,1,NA,NA,1,NA,NA
+Friedman et al. Staff,299,80,0.268,29,0.363,219,0.732,175,0.799,44,0.201,1,NA,NA,1,NA,NA
+"Menachemi et al., MMWR",3605,63,0.0174,28,0.442,NA,0.983,NA,NA,NA,NA,1,NA,NA,1,NA,NA

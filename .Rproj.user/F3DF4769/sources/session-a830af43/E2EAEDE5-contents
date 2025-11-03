@@ -1,0 +1,4 @@
+out_synthetic <- synthetic_zero_phi(100000, 0.4, 0.4, 2, 17, 35, 2)
+out_synthetic
+out2 <- synthetic_zero_phi2(100000, 0.4, 0.4, 2, 17, 35, 2)
+out2

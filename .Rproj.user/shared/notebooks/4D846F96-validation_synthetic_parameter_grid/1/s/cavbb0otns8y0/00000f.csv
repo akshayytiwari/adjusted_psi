@@ -1,0 +1,4 @@
+"0","path_data <- ""~/ubuntu_research/Research/adjusted_psi/data/final_data"""
+"0","setwd(path_data)"
+"0","df <- read.csv(""./data_v8.csv"")"
+"0",""

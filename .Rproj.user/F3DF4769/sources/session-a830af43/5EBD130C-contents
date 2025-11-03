@@ -1,0 +1,188 @@
+---
+title: "Distribution and correlation analyses of corrected psi and eta"
+author: "Akshay Tiwari et al."
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(reshape2)
+library(ggrepel)
+library(here)
+source(here("scripts/01_formalism.R"))
+source(here("scripts/04_monte_carlo.R"))
+source(here("scripts/05_plot_distributions.R"))
+source(here("scripts/06_correlation_eta.R"))
+source(here("scripts/07_eta_vs_phic.R"))
+source(here("scripts/08_eta_rsq_calculation.R"))
+source(here("scripts/09_misc_correlation.R"))
+
+```
+
+# Load data
+```{r}
+df <- read.csv(here("data/data_main.csv"))
+```
+
+# Figure S2 and 2a - Violin plots of rho_c and phi_c
+```{r}
+df_long <- melt(df, measure.vars = c("rho_c", "phi_c"))
+p_violin_rho_c <- plot_violin(df_long, "rho_c", "olivedrab3")
+p_violin_rho_c
+p_violin_phi_c <- plot_violin(df_long, "phi_c", "orchid3")
+p_violin_phi_c
+```
+
+# Monte Carlo estimation of psi and eta
+```{r}
+df <- df %>% 
+  rowwise() %>% 
+  mutate(mc = list(monte_carlo(n, sp, sn, 100000,
+                               rho_c, psi_c, phi_c,
+                               alpha_a, alpha_b, beta_a, beta_b))) %>%
+  mutate(psi_l = quantile(mc$psi, probs = 0.25, na.rm = TRUE),
+         psi = quantile(mc$psi, probs = 0.5, na.rm = TRUE),
+         psi_u = quantile(mc$psi, probs = 0.75, na.rm = TRUE),
+         eta_l = quantile(mc$eta, probs = 0.25, na.rm = TRUE),
+         eta = quantile(mc$eta, probs = 0.5, na.rm = TRUE),
+         eta_u = quantile(mc$eta, probs = 0.75, na.rm = TRUE)) %>%
+  ungroup()
+```
+
+# Figure 2b - Scatter of psi vs psi_c
+```{r}
+p_psi <- plot_psi_scatter(df)
+p_psi
+```
+
+# Figure 2c - Violin plots of psi vs psi_c
+```{r}
+df_long <- melt(df, measure.vars = c("psi_c", "psi"))
+p_violin_psi_psi_c <- plot_violin_combined(df_long)
+p_violin_psi_psi_c
+```
+
+# Figure 2d - Histogram of eta
+```{r}
+df$eta_range <- cut(df$eta,
+                    breaks = c(-Inf, 0, 25, 50, 75, 100, Inf),
+                    labels = c("0", "0–25", "25–50", "50–75", "75–100", ">100"),
+                    right = FALSE)
+
+table(df$eta_range)
+
+p_hist <- plot_eta_histogram(df)
+p_hist
+```
+
+# Statistical comparisons
+```{r}
+cat("Median ψ_c:", median(df$psi_c, na.rm = TRUE), "\n")
+cat("Median ψ:", median(df$psi, na.rm = TRUE), "\n")
+
+wilcox_test <- wilcox.test(df$psi - df$psi_c,
+                           mu = 0, alternative = "greater",
+                           conf.int = TRUE)
+print(wilcox_test)
+```
+
+# Table S2 - Comparing point estimates and MC-based estimates of psi
+```{r}
+
+df_point <- df %>% 
+  mutate(psi_point = correction(rho_c, psi_c, phi_c, alpha, beta),
+         psi = psi,           # Median estimate
+         psi_lower = psi_l,   # First quantile estimate
+         psi_upper = psi_u) %>%   # Third quantile estimate
+  select(article, psi_point, psi, psi_lower, psi_upper) %>% 
+  mutate(across(is.numeric, ~ round(., 2)))
+print(df_point)
+knitr::kable(df_point, caption = "Comparison of point estimates and MC-based estimates")
+
+```
+
+# Figure S4 - Correlation between eta and predictors
+```{r}
+cor_results <- correlate_eta(df)
+print(cor_results)
+knitr::kable(cor_results, caption = "Spearman correlation of η with predictors")
+```
+
+# Figure 3 - eta versus phi_c plot and R² calculation
+```{r}
+
+# Compute R²
+res_rsq <- compute_eta_rsq(df, monte_carlo, n_iter = 10000)
+
+# Display summary
+res_rsq$summary
+
+# Save results
+# write.csv(res_rsq$eta_df, "outputs/tables/eta_rsq_results.csv", row.names = FALSE)
+
+```
+# Figure S5 - Uncertainty in psi vs sample size
+```{r}
+df$rel_width_psi <- (df$psi_u - df$psi_l)/df$psi
+cor_sample <- cor.test(df$n, df$rel_width_psi, method = "spearman")
+print(cor_sample)
+
+# plot
+p_width_vs_n <- plot_width_vs_n(df)
+p_width_vs_n
+```
+
+# Figure S6 - psi vs recall period
+```{r}
+df_recall <- read.csv(here("data/data_recall.csv"))
+df$recall_period <- df_recall$recall_period_calculated
+
+cor_recall <- cor.test(df$recall_period, df$psi, method = "spearman")
+cor_recall
+
+# plot
+p_recall_vs_psi <- plot_recall_vs_psi(df)
+p_recall_vs_psi
+```
+
+# Figure S7 and S8 - Symptoms matrix heatmap and correlation with number of symptoms
+```{r}
+# Heatmap
+symptom_csv <- here("data/symptom_matrix.csv")
+p_symptom_matrix <- plot_symptom_matrix(symptom_csv)
+p_symptom_matrix
+
+# Association of psi and psi_c with number of symptoms reported in the studies
+cor_sym_psi <- cor.test(df$psi, df$num_sym, method = "spearman")
+cor_sym_psi
+
+cor_sym_phi_c <- cor.test(df$phi_c, df$num_sym, method = "spearman")
+cor_sym_phi_c
+
+## Plots
+p_sym_psi <- plot_sym_cor(df, df$psi, "psi")
+p_sym_psi
+p_sym_phi_c <- plot_sym_cor(df, df$phi_c, "phi_c")
+p_sym_phi_c
+```
+# Figure S9 - Association with age of participants
+```{r}
+cor_age_psi <- cor.test(df$mean_median_age, df$psi, method = "spearman")
+cor_age_psi
+cor_age_psi_c <- cor.test(df$mean_median_age, df$psi_c, method = "spearman")
+cor_age_psi_c
+
+# Plots
+p_age_vs_psi <- plot_age_vs_psi(df, df$psi, "psi")
+p_age_vs_psi
+p_age_vs_psi_c <- plot_age_vs_psi(df, df$psi_c, "psi_c")
+p_age_vs_psi_c
+```
+
+
+

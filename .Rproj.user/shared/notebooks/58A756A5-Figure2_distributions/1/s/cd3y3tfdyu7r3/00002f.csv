@@ -1,0 +1,6 @@
+"0",""
+"0","# Save results"
+"0","write.csv(res_rsq$eta_df, ""outputs/tables/eta_rsq_results.csv"", row.names = FALSE)"
+"2","Error in file(file, ifelse(append, ""a"", ""w"")) : 
+  cannot open the connection
+"

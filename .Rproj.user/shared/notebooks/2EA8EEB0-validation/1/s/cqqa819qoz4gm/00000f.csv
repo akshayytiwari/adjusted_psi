@@ -1,0 +1,4 @@
+"0","path_beta_function <- ""~/ubuntu_research/Research/adjusted_psi/codes/final_codes/beta-distribution-parameters"""
+"0","setwd(path_beta_function)"
+"0","source(""beta_dis.R"")"
+"0",""

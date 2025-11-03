@@ -1,0 +1,34 @@
+Symptoms,Menezes et al.,Moura da Silva et al.,Terças-Trettel et al.,Nwosu et al.,Vial et al.,Li et al.,Garay et al.,Serrano-coll et al.,Espenhain et al.,Carrat et al.,Rouquette et al.,Beaumont et al.,Santos-Hövener et al.,Weis et al.,Merkely et al.,Murhekar et al.,Kumar et al.,Shadmani et al.,Poustchi et al.,Heavey et al.,Pagani et al.,Melotti et al.,Ngere et al.,Sagara et al.,Basto-Abreu et al.,Arnaldo et al.,Okpala et al.,Nisar et al.,Huamaní et al.,Díaz-Vélez et al.,Reyes-Vega et al.,Moyano et al.,Canto e Castro et al.,Kislaya et al.,Talla et al.,Pérez-Gómez et al.,Richard et al.,Alsuwaidi et al.,Ward et al.,Sullivan et al.,Chamberlain et al.,Pathela et al.
+Fever,Y,y,y,y,Y,Y,Y,y,Y,y,y,y,Y,y,Y,Y,y,y,y,Y,Y,y,y,y,Y,y,y,Y,y,Y,y,y,y,Y,Y,y,Y,y,y,y,y,y
+Cough,Y,,y,y,y,Y,Y,y,Y,y,y,y,Y,y,Y,Y,y,y,y,Y,Y,y,y,y,Y,y,y,Y,y,Y,y,y,y,Y,Y,y,Y,y,y,y,y,y
+Shortness of breath/ dyspnea,y,,,y,y,y,y,y,y,y,y,y,y,y,y,y,y,,y,y,y,y,y,y,y,y,y,y,,Y,,,,y,,y,y,y,,y,y,y
+Aches/pains (muscle(myagia)/ stomach/chest/abdominal/joint),y,,y,y,y,,y,y,y,,y,y,y,y,y,,y,y,y,,y,y,,y,y,,y,y,y,,y,y,y,,y,,y,y,,y,y,y
+Loss of taste/smell/anosmia/ageusia,y,y,y,y,y,,y,y,y,y,,y,y,y,y,y,y,y,y,y,y,y,,y,y,,y,,,Y,,y,y,,y,y,y,y,y,,y,y
+Sore throat/Odynophagia,y,y,y,y,y,,,,,,,,y,y,y,y,y,y,y,,,y,y,y,y,y,y,y,y,Y,y,y,y,y,y,y,y,y,,y,y,y
+Fatigue/tiredness/malaise,,y,,y,y,,,,Y,,,y,,y,y,y,y,,,,,,,y,,y,y,y,,Y,y,,y,y,y,y,y,y,,,,
+Headache,y,y,y,y,y,,y,y,y,,,y,,y,y,,y,y,,,,y,,y,y,y,y,y,y,Y,y,y,y,y,y,y,y,y,,y,y,y
+Diarrhoea,y,y,,y,y,,y,y,,,,y,,,y,,y,y,,,,,,y,y,,y,y,y,Y,y,y,y,y,y,y,y,y,,y,y,y
+Nausea/vomiting,y,y,,y,,,y,y,,,,y,,y,y,,y,y,,,,,,y,y,,y,y,,Y,,,y,y,,y,y,,,y,y,y
+Runny nose/ rhinitis/ rhinorrhea/cold/sneezing,,,,y,,,,,y,,,y,y,y,,,y,y,,,,,y,y,y,,y,y,y,,y,y,y,,y,,y,y,,y,y,
+Rough skin/ COVID toe,,,,,,,,,,,,,,,,,,y,,,y,,,,,,y,,,,,,y,,,,,y,,,,
+Palpitation (rapid heartbeat),y,,,,,,,,,,,,,,,,,,,,,y,,,,,,,,,,,,,,,,,,,,
+Shivering/chills,y,y,,,,,,,,,,,,y,,,y,,,,,,y,y,,,y,,,Y,,,,,,y,,y,,y,y,y
+Irritated eyes/ conjunctivitis/ pain,,,,,,,,,y,,,,,,,,y,y,y,,,y,,,y,,y,,,,,,,,,,,y,,y,y,
+Loss of interest/ apathy,,,,,,,,,,,,,,,,,,,,,,,,,,,,,y,,,y,,,,,,,,,,
+Eating disorder/ anorexia/ loss of apetite,,,,,,,,,,,,,,,,,,y,,,,y,,,,,y,,,,,,y,,,,y,,,,,
+Coloured sputum,,,,,,,,,y,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Loss of balance/vertigo/altered consciousness,,,,,,,,,,,,,,,,,,,,,,,,,,,y,,,,,,y,,,,,y,,,,
+Pneumonia,,,,,,,,,,,,,y,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Weakness/ debility,,,,,,,,,,,,,,,,,,y,y,,,y,,,,,,,,,,,y,,,,,,,,,
+Bad taste in the mouth/ dysgeusia,,,,,,,,,,y,y,,,,,,,,,,y,,,,,,,,y,,,,,,,,y,,,,,
+Muscle spasm (sudden muscular contraction),,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Wheezing (high-pitched sound while breathing),,,,,,,,,,,,,,,,,,,,,,,,y,,,,y,,,,,,,,,,y,,,,
+Sickness last two months,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Dysosmia,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Y,,,,,,,,,,,,
+Hemoptysis,,,,,,,,,,,,,,,,,,y,,,,,,,,,,,,,,,,,,,,,,,,
+Distress,,,,,,,,,,,,,,,,,,y,,,,,,,,,,,y,,,y,,,,,,,,,,
+Convulsions,,,,,,,,,,,,,,,,,,y,,,,,,,,,,,,,,,,,,,,,,,,
+Plegia,,,,,,,,,,,,,,,,,,y,,,,,,,,,,,,,,,,,,,,,,,,
+Seizures,,,,,,,,,,,,,,,,,,,,,,,,,,,y,,,,,,,,,,,,,,,
+Nose bleed,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+etc.,,,,,,,,,,,,,,,,,,y,y,,,,,,y,,,,,,,,,,,,y,y,y,,,

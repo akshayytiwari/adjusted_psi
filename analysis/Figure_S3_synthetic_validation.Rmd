@@ -1,0 +1,50 @@
+---
+title: "Validation of corrected ψ formalism against synthetic data"
+output:
+  html_document:
+    toc: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(here)
+source(here("scripts/15_weakly_informative_prior.R"))  
+source(here("scripts/16_generation_psi.R"))  
+source(here("scripts/17_monte_carlo.R"))       
+source(here("scripts/18_synthetic_validation_grid.R"))
+source(here("scripts/19_synthetic_validation_plot.R"))
+source(here("scripts/20_synthetic_validation_studies.R"))
+```
+# Data extraction
+```{r}
+df_ref <- read.csv(here("data/data_main.csv"))
+
+```
+
+# Figure S3a - Validation using parameter grid
+```{r}
+df_synth_val <- generate_synthetic_validation(df_ref,
+                                          weak_prior_fun = weak_prior,
+                                          synthetic_fun = synthetic,
+                                          formalism_fun = monte_carlo)
+
+p_synth <- plot_validation_grid(df_synth_val, label = "synthetic")
+summary_synth <- summarize_formalism_accuracy(df_synth_val)
+summary_synth
+```
+
+# Figure S3b - Real serosurvey validation
+```{r}
+df_real <- read.csv(here("data/data_main.csv"))
+
+df_real_val <- generate_real_validation(df_real,
+                                        synthetic_fun = synthetic,
+                                        formalism_fun = monte_carlo)
+
+p_real <- plot_validation_studies(df_real_val, label = "real")
+summary_real <- summarize_formalism_accuracy(df_real_val)
+summary_real
+```
+

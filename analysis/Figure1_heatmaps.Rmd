@@ -1,0 +1,26 @@
+---
+title: "Dependence of corrected ψ on test and survey parameters"
+author: "Akshay Tiwari et al."
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(dplyr)
+library(ggplot2)
+library(purrr)
+# path <- "~/ubuntu_research/Research/adjusted_psi/asymptomatic_prevalence"
+# setwd(path)
+source("scripts/01_formalism.R")
+source("scripts/02_generate_heatmap_data.R")
+source("scripts/03_plot_heatmaps.R")
+
+df <- read.csv("data/data_main.csv")
+heat_all <- generate_heatmap_data(df)
+p <- plot_heatmaps(heat_all)
+ggsave("outputs/figures/Fig1_heatmaps.png", p, width = 8, height = 7, dpi = 200)
+p
+
+```
+
+

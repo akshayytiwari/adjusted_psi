@@ -1,0 +1,360 @@
+---
+title: Comparison of our formalism (with Monte Carlo) with synthetic data
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(tibble)
+```
+
+# Data extraction
+```{r}
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data)
+df <- read.csv("./data_v8.csv")
+
+```
+
+```{r}
+df$alpha <- round(df$alpha, 2)
+df$beta <- round(df$beta, 2)
+```
+
+
+# --- 1. Parameter grid---
+
+```{r}
+alpha_val <- quantile(df$alpha, probs = c(0.25, 0.5, 0.75))
+beta_val <- quantile(df$beta, probs = c(0.25, 0.5, 0.75))
+# alpha_val <- beta_val <- c(0.90, 0.95, 0.99)
+
+rho_c_val <- quantile(df$rho_c, probs = c(0.25, 0.5, 0.75))
+psi_c_val <- quantile(df$psi_c, probs = c(0.25, 0.5, 0.75))
+phi_c_val <- quantile(df$phi_c, probs = c(0.25, 0.5, 0.75))
+n_val <- c(1000, 5000, 10000)
+
+kappa <- 30
+test_quality <- c("Poor", "Moderate", "Good")
+grid <- expand.grid(
+  test_quality = test_quality,
+  rho_c = rho_c_val,
+  psi_c = psi_c_val,
+  phi_c = phi_c_val,
+  n = n_val
+)
+df_syn <- grid %>% 
+  mutate(
+    alpha = case_when(
+      test_quality == "Poor" ~ alpha_val[1],
+      test_quality == "Moderate" ~ alpha_val[2],
+      test_quality == "Good" ~ alpha_val[3]
+    ),
+    beta = case_when(
+      test_quality == "Poor" ~ beta_val[1],
+      test_quality == "Moderate" ~ beta_val[2],
+      test_quality == "Good" ~ beta_val[3]
+    )
+  )
+
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/"
+setwd(path_code)
+source("weakly_informative_prior.R")
+
+# Estimating beta distribution parameters of alpha and beta
+alpha_params <- as.data.frame(matrix(NA, nrow = nrow(df_syn), ncol = 3))
+beta_params <- as.data.frame(matrix(NA, nrow = nrow(df_syn), ncol = 3))
+
+colnames(alpha_params) <- c("alpha", "alpha_a", "alpha_b")
+colnames(beta_params) <- c("beta", "beta_a", "beta_b")
+for (i in 1:nrow(df_syn)) {
+  alpha_params[i, 1:3] <- weak_prior(df_syn$alpha[i], kappa)
+  beta_params[i, 1:3] <- weak_prior(df_syn$beta[i], kappa)
+}
+df_syn <- cbind(df_syn, alpha_params[,2:3], beta_params[,2:3])
+```
+
+# Obtaining 95% CI of alpha and beta using their beta distribution parameters
+
+```{r}
+
+df_syn <- df_syn %>%
+  mutate(
+    alpha_l = qbeta(0.025, alpha_a, alpha_b),
+    alpha_u = qbeta(0.975, alpha_a, alpha_b),
+    beta_l = qbeta(0.025, beta_a, beta_b),
+    beta_u = qbeta(0.975, beta_a, beta_b)
+  )
+
+```
+
+
+```{r}
+# Sourcing functions
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi.R")
+source("formalism.R")
+
+results_list <- vector("list", nrow(df))
+
+set.seed(123)
+for (i in seq_len(nrow(df_syn))) {
+  study <- df_syn[i, ]
+  n <- study$n
+  n_iter_mc <- 100000
+  rho <- study$rho_c
+  psi <- study$psi_c
+  phi <- study$phi_c
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic(n, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  out_form <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)
+  
+  # Store results in data frame
+  
+  vars <- list(
+    n = study$n,
+    
+    psi_form_median = as.numeric(quantile(out_form$psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(out_form$psi_form, 0.25)),
+    psi_form_upper = as.numeric(quantile(out_form$psi_form, 0.75))
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+  cat(sprintf("Study %s completed \n", study$article))
+}
+```
+
+# --- 2. Combine results---
+
+```{r}
+results_df <- do.call(rbind, results_list)
+
+results_df <- as.data.frame(results_df)
+results_df[] <- lapply(results_df, function(x) if(is.numeric(x)) round(x, 4) else x)
+
+# Adding columns
+results_df <- results_df %>%
+  mutate(
+    rho_true =df_syn$rho_c,
+    psi_true = df_syn$psi_c,
+    phi_true = df_syn$phi_c,
+    sen_true = df_syn$alpha,
+    spe_true = df_syn$beta,
+    
+    # Formalism
+    
+    psi_form_delta = (psi_true - results_df$psi_form_median)*100/psi_true,
+    psi_form_width = results_df$psi_form_upper - results_df$psi_form_lower,
+  )
+
+results_df <- results_df %>% 
+  select(c(n, rho_true, psi_true, phi_true, 
+           sen_true, spe_true),
+         everything())
+
+# Round values for reporting
+results_df <- results_df %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+```
+
+# --- 3. Measure of closeness to true value ---
+## Concordance correlation coefficient (CCC)
+```{r}
+library(DescTools)
+CCC(results_df$psi_form_median, results_df$psi_true)
+
+ccc_result <- CCC(results_df$psi_form_median, results_df$psi_true, ci = "z-transform")
+print(ccc_result)
+
+```
+# Plots
+## Box plot and y=x plot
+```{r}
+s_text <- 11
+s_title <- 12
+s_point <- 5
+s_scatter <- 3
+width_tick <- 0.6
+length_tick <- 0.25  # in cm
+width_border <- 0.6
+
+# Make sure psi_true is numeric (not factor)
+results_df <- results_df %>%
+  mutate(psi_true = as.numeric(as.character(psi_true)))
+
+# Main plot
+plt <- ggplot(results_df, aes(x = psi_true, y = psi_form_median, group = psi_true)) +
+    geom_abline(
+    slope = 1, intercept = 0, linetype = "dashed",
+    color = "black", linewidth = 0.8
+  ) +
+  geom_boxplot(
+    width = 0.1,               # narrow boxes since x is continuous
+    fill = "skyblue", alpha = 0.7,
+    outlier.shape = 19, outlier.size = 1.5
+  ) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(
+    x = expression(psi[true]),
+    y = expression(hat(psi)[form]~"(estimated)")
+  ) +
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+          axis.title = element_blank(),
+          axis.text = element_text(size = s_text, colour = "black"),
+          axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.length = unit(length_tick, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+
+plt
+
+```
+
+Grouping 
+```{r}
+results_df %>%
+  group_by(psi_true) %>%
+  summarise(
+    Q1 = quantile(psi_form_median, 0.25),
+    Median = quantile(psi_form_median, 0.5),
+    Q3 = quantile(psi_form_median, 0.75),
+    Lower_whisker = min(psi_form_median[psi_form_median > (Q1 - 1.5*(Q3-Q1))]),
+    Upper_whisker = max(psi_form_median[psi_form_median < (Q3 + 1.5*(Q3-Q1))]),
+    min_psi = min(psi_form_median),
+    max_psi = max(psi_form_median)
+  )
+
+```
+```{r}
+library(dplyr)
+
+# Compute whisker percentiles empirically for each psi_true
+whisker_percentiles <- results_df %>%
+  group_by(psi_true) %>%
+  summarise(
+    Q1 = quantile(psi_form_median, 0.25),
+    Q3 = quantile(psi_form_median, 0.75),
+    IQR = Q3 - Q1,
+    lower_whisker = max(min(psi_form_median), Q1 - 1.5 * IQR),
+    upper_whisker = min(max(psi_form_median), Q3 + 1.5 * IQR),
+    lower_percentile = ecdf(psi_form_median)(lower_whisker) * 100,
+    upper_percentile = ecdf(psi_form_median)(upper_whisker) * 100,
+    inside_whiskers = upper_percentile - lower_percentile
+  )
+
+whisker_percentiles
+
+```
+
+
+## Summarize accuracy and interval widths across studies ---
+```{r}
+library(dplyr)
+summary_stats <- results_df %>%
+  summarise(
+    mean_abs_error_psi_form = mean(abs(psi_form_delta), na.rm=TRUE),
+    median_abs_error_psi_form = median(abs(psi_form_delta), na.rm=TRUE),
+    median_width_psi_form = median(psi_form_width, na.rm=TRUE),
+    coverage_psi_form = mean(psi_true >= psi_form_lower & psi_true <= psi_form_upper, na.rm=TRUE),
+  )
+print(summary_stats)
+# path_results <- "~/ubuntu_research/Research/adjusted_psi/results/comparison-with-Mitchell/with_synthetic-data"
+# setwd(path_results)
+# write.csv(summary_tibble, "psi_error_width_coverage2.csv")
+
+```
+
+
+## Significance test
+
+```{r}
+wilcox_test <- wilcox.test(results_df$psi_form_median, results_df$psi_true, paired = TRUE)
+print(wilcox_test)
+```
+
+# Effect size
+
+```{r}
+# inputs
+x <- results_df$psi_form_median
+y <- results_df$psi_true
+n <- length(x)
+
+diffs <- x - y
+mean_diff <- mean(diffs)
+sd_diff   <- sd(diffs)
+d_paired  <- mean_diff / sd_diff     # paired Cohen's d (dz)
+d_paired
+
+paired_cohend_bootstrap <- function(x, y, B = 5000, seed = 123) {
+  set.seed(seed)
+  ix <- which(!is.na(x) & !is.na(y))
+  x <- x[ix]; y <- y[ix]
+  n <- length(x)
+  diffs <- x - y
+  d_orig <- mean(diffs) / sd(diffs)
+  boot_d <- numeric(B)
+  for (b in seq_len(B)) {
+    s <- sample(seq_len(n), size = n, replace = TRUE)
+    ds <- diffs[s]
+    boot_d[b] <- mean(ds, na.rm = TRUE) / sd(ds, na.rm = TRUE)
+  }
+  ci_pct <- quantile(boot_d, c(0.025, 0.975))
+  list(d = d_orig, ci = ci_pct, boot_values = boot_d)
+}
+
+res_boot <- paired_cohend_bootstrap(results_df$psi_form_median, results_df$psi_true, B = 5000, seed = 2025)
+res_boot$d         # point estimate
+res_boot$ci        # bootstrap 95% percentile CI
+
+```
+
+## Export diagnostics
+```{r}
+# Export median absolute error, Wilcox p-value, effect size, and CCC
+# Opening a previous file that has values for other values of kappa
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results/synthetic_parameter_grid"
+setwd(path_results)
+res <- read.csv("different_kappa.csv", header = TRUE)
+
+res[4,] <- c(
+  kappa, summary_stats$median_abs_error_psi_form, wilcox_test$p.value,
+  d_paired, ccc_result$rho.c[1]
+)
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results/synthetic_parameter_grid"
+setwd(path_results)
+write.csv(res, "different_kappa.csv", row.names = FALSE)
+```

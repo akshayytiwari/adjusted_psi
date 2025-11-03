@@ -1,0 +1,596 @@
+---
+title: Comparison of our formalism (with Monte Carlo) with synthetic data
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(tibble)
+```
+
+# Data extraction
+
+```{r}
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data)
+df <- read.csv("./data_v8.csv")
+
+results_list <- vector("list", nrow(df))
+
+# Sourcing functions
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi.R")
+source("formalism.R")
+
+set.seed(123)
+for (i in seq_len(nrow(df))) {
+  study <- df[i, ]
+  n <- study$n
+  n_iter_mc <- 100000
+  rho <- study$rho_c
+  psi <- study$psi_c
+  phi <- study$phi_c
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic(n, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  out_form <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)
+  
+  # Store results in data frame
+  
+  vars <- list(
+    article = study$article,
+    n = study$n,
+    
+    psi_form_median = as.numeric(quantile(out_form$psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(out_form$psi_form, 0.25)),
+    psi_form_upper = as.numeric(quantile(out_form$psi_form, 0.75))
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+  cat(sprintf("Study %s completed \n", study$article))
+}
+
+```
+
+# --- 2. Combine results---
+
+```{r}
+results_df <- do.call(rbind, results_list)
+
+results_df <- as.data.frame(results_df)
+results_df[] <- lapply(results_df, function(x) if(is.numeric(x)) round(x, 4) else x)
+
+# Adding columns
+results_df <- results_df %>%
+  mutate(
+    sp = df$sp,
+    asym_sp = df$asym_sp,
+    sn = df$sn,
+    sym_sn = df$sym_sn,
+    rho_true =df$rho_c,
+    psi_true = df$psi_c,
+    phi_true = df$phi_c,
+    sen_true = df$alpha,
+    spe_true = df$beta,
+    
+    # Formalism
+    
+    psi_form_delta = (psi_true - results_df$psi_form_median)*100/psi_true,
+    psi_form_width = results_df$psi_form_upper - results_df$psi_form_lower,
+  )
+
+results_df <- results_df %>% 
+  select(c(article, n, sp, asym_sp, sn, sym_sn, rho_true, psi_true, phi_true, 
+           sen_true, spe_true),
+         everything())
+
+# Round values for reporting
+results_df <- results_df %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+```
+
+# --- 3. Summarize accuracy and interval widths across studies ---
+
+## Concordance correlation coefficient (CCC)
+```{r}
+library(DescTools)
+CCC(results_df$psi_form_median, results_df$psi_true)
+
+ccc_result <- CCC(results_df$psi_form_median, results_df$psi_true, ci = "z-transform")
+print(ccc_result)
+
+```
+
+
+```{r}
+library(dplyr)
+summary_stats <- results_df %>%
+  summarise(
+    mean_abs_error_psi_form = mean(abs(psi_form_delta), na.rm=TRUE),
+    median_abs_error_psi_form = median(abs(psi_form_delta), na.rm=TRUE),
+    median_width_psi_form = median(psi_form_width, na.rm=TRUE),
+    coverage_psi_form = mean(psi_true >= psi_form_lower & psi_true <= psi_form_upper, na.rm=TRUE),
+  )
+print(summary_stats)
+# path_results <- "~/ubuntu_research/Research/adjusted_psi/results/comparison-with-Mitchell/with_synthetic-data"
+# setwd(path_results)
+# write.csv(summary_tibble, "psi_error_width_coverage2.csv")
+
+```
+
+# Performing Wilcox test to check if psi_form_median is significantly different from psi_true
+
+```{r}
+wilcox_test <- wilcox.test(results_df$psi_form_median, results_df$psi_true, paired = TRUE)
+print(wilcox_test)
+```
+
+# Effect size
+
+```{r}
+# inputs
+x <- results_df$psi_form_median
+y <- results_df$psi_true
+n <- length(x)
+
+diffs <- x - y
+mean_diff <- mean(diffs)
+sd_diff   <- sd(diffs)
+d_paired  <- mean_diff / sd_diff     # paired Cohen's d (dz)
+d_paired
+
+paired_cohend_bootstrap <- function(x, y, B = 5000, seed = 123) {
+  set.seed(seed)
+  ix <- which(!is.na(x) & !is.na(y))
+  x <- x[ix]; y <- y[ix]
+  n <- length(x)
+  diffs <- x - y
+  d_orig <- mean(diffs) / sd(diffs)
+  boot_d <- numeric(B)
+  for (b in seq_len(B)) {
+    s <- sample(seq_len(n), size = n, replace = TRUE)
+    ds <- diffs[s]
+    boot_d[b] <- mean(ds, na.rm = TRUE) / sd(ds, na.rm = TRUE)
+  }
+  ci_pct <- quantile(boot_d, c(0.025, 0.975))
+  list(d = d_orig, ci = ci_pct, boot_values = boot_d)
+}
+
+res_boot <- paired_cohend_bootstrap(results_df$psi_form_median, results_df$psi_true, B = 5000, seed = 2025)
+res_boot$d         # point estimate
+res_boot$ci        # bootstrap 95% percentile CI
+# Optional: visualize
+hist(res_boot$boot_values, main = "Bootstrap dist. of paired Cohen's d", xlab = "d")
+abline(v = res_boot$d, col="red", lwd=2)
+abline(v = res_boot$ci, col="blue", lty=2, lwd=2)
+
+```
+
+# Plot distributions of delta, width, and coverage probability with different sample sizes: n, sp, and sn
+
+```{r}
+# Plot psi_c (x-axis) versus psi_form_median (y-axis) with a dashed line y=x
+plt <- ggplot(results_df) +
+  geom_abline(
+    slope = 1, intercept = 0, linetype = "dashed",
+    color = "black", linewidth = 0.8
+  ) +
+  geom_errorbar(aes(psi_true, ymin = psi_form_lower, ymax = psi_form_upper), 
+                width = 0.01, size = 0.5, alpha = 0.8, colour = "black") +
+  geom_point(aes(x = psi_true, y = psi_form_median,), 
+             shape = 21, fill = "lightblue", size = 3) + 
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(x = expression("True " * psi), 
+       y = expression("Estimated " * psi)) +
+  theme_minimal() + 
+  theme(text = element_text(family = "Helvetica"),
+        axis.text = element_text(size = 11, colour = "black"),
+        axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = 0.6, colour = "black"),
+        axis.ticks.length = unit(0.25, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = 0.6),
+        legend.position = "none")
+plt
+
+```
+
+## Box plot and y=x plot
+```{r}
+s_text <- 11
+s_title <- 12
+s_point <- 5
+s_scatter <- 3
+width_tick <- 0.6
+length_tick <- 0.25  # in cm
+width_border <- 0.6
+
+# Make sure psi_true is numeric (not factor)
+results_df <- results_df %>%
+  mutate(psi_true = as.numeric(as.character(psi_true)))
+
+# Main plot
+plt <- ggplot(results_df, aes(x = psi_true, y = psi_form_median, group = psi_true)) +
+    geom_abline(
+    slope = 1, intercept = 0, linetype = "dashed",
+    color = "black", linewidth = 0.8
+  ) +
+  geom_boxplot(
+    width = 0.1,               # narrow boxes since x is continuous
+    fill = "skyblue", alpha = 0.7,
+    outlier.shape = 19, outlier.size = 1.5
+  ) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(
+    x = expression(psi[true]),
+    y = expression(hat(psi)[form]~"(estimated)")
+  ) +
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+          axis.title = element_blank(),
+          axis.text = element_text(size = s_text, colour = "black"),
+          axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.length = unit(length_tick, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+
+plt
+
+```
+
+
+# Plot distributions of delta, width, and coverage probability with different sample sizes: n, sp, and sn
+
+```{r}
+# Plot psi_c (x-axis) versus psi_form_median (y-axis) with a dashed line y=x
+plt <- ggplot(results_df) +
+  geom_line(aes(x = psi_true, y = psi_true), linetype = "dashed", colour = "black", size = 1) +
+  geom_errorbar(aes(psi_true, ymin = psi_form_lower, ymax = psi_form_upper), 
+                width = 0.01, size = 0.5, alpha = 0.8, colour = "black") +
+  geom_point(aes(x = psi_true, y = psi_form_median,), 
+             shape = 21, fill = "lightblue", size = 3) + 
+  scale_x_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1.02), 
+                     expand = c(0, 0)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1.02), 
+                     expand = c(0, 0)) +
+  labs(x = expression("True " * psi), 
+       y = expression("Estimated " * psi)) +
+  theme_minimal() + 
+  theme(text = element_text(family = "Helvetica"),
+        axis.text = element_text(size = 11, colour = "black"),
+        axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = 0.6, colour = "black"),
+        axis.ticks.length = unit(0.25, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = 0.6),
+        legend.position = "none")
+plt
+
+```
+
+# Variation of psi when sensitivity changes with time
+
+Here, we will analyze how accuracy in estimate of psi changes when sensitivity varies with time since infection. We have a dataset where false negative rate changes over time. We will see how the psi_form_delta changes at different point of time.
+
+```{r}
+path_data3 <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data3)
+df3 <- read.csv("./pcr_sens_time.csv")[-1,]
+
+
+```
+
+## Modifying the dataset
+
+```{r}
+df3 <- df3 %>% 
+  mutate(
+    day_inf = paste0("Day ", df3$time),
+    day_sym_onset = day.from.symptom.onset,
+    n = 1000,
+    alpha = 1 - false_neg,
+    alpha_l = 1 - false_neg_u,
+    alpha_u = 1 - false_neg_l,
+    beta = 1.00,
+    beta_l = 0.96,
+    beta_u = 1.00,
+    rho_true = median(df$rho_c),
+    psi_true = median(df$psi_c)
+  )
+
+# Estiming beta distribution parameters
+path_beta <- "~/ubuntu_research/Research/adjusted_psi/codes/final_codes/beta-distribution-parameters"
+setwd(path_beta)
+source("beta_dis.R")
+alpha_params <- as.data.frame(matrix(NA, nrow = nrow(df3), ncol = 2))
+colnames(alpha_params) <- c("alpha_a", "alpha_b")
+beta_params <- as.data.frame(matrix(NA, nrow = nrow(df3), ncol = 2))
+colnames(beta_params) <- c("beta_a", "beta_b")
+
+for (i in 1:nrow(df3)) {
+  alpha_params[i, ] <- estimate_beta(c(df3$alpha_l[i], df3$alpha[i], df3$alpha_u[i]), sen_range = c(0.1, 100))
+  beta_params[i, ] <- estimate_beta(c(df3$beta_l[i], df3$beta[i], df3$beta_u[i]), spe_range = c(0.1, 100))
+}
+df3 <- cbind(df3, alpha_params, beta_params)
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data)
+write.csv(df3, "pcr_sens_time_v2.csv", row.names = FALSE)
+
+```
+
+## Synthetic data generation
+
+```{r}
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data)
+df3 <- read.csv("pcr_sens_time_v2.csv")
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi_zero-phi.R")
+source("formalism_zero_phi.R")
+
+# Miscellaneous checks
+results_list <- vector("list", nrow(df3))
+
+## changing n
+# df3$n <- 10000
+
+set.seed(123)
+for (i in seq_len(nrow(df3))) {
+  study <- df3[i, ]
+  n <- 100000
+  n_iter_mc <- 100000
+  rho_true <- study$rho_c
+  psi_true <- study$psi_c
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic_zero_phi(n, rho_true, psi_true, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  psi_form <- model_formalism_zero_phi(n, n_sym_pos + n_asym_pos, 
+                                       n_iter_mc, rho_c, psi_c, sen_a, sen_b, spe_a, spe_b)
+  psi_delta = as.numeric(abs(psi_true - psi_form)*100/psi_true)
+  
+  # Store results in data frame
+  
+  vars <- list(
+    n = study$n,
+    
+    psi_form_median = as.numeric(quantile(psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(psi_form, 0.25)),
+    psi_form_upper = as.numeric(quantile(psi_form, 0.75)),
+    
+    psi_delta_median = as.numeric(quantile(psi_delta, 0.5)),
+    psi_delta_lower = as.numeric(quantile(psi_delta, 0.25)),
+    psi_delta_upper = as.numeric(quantile(psi_delta, 0.75))
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+}
+results_df <- do.call(rbind, results_list)
+
+```
+
+```{r}
+results_df$alpha <- df3$alpha
+results_df$alpha_l <- df3$alpha_l
+results_df$alpha_u <- df3$alpha_u
+results_df$day_inf <- df3$day_inf
+
+# rename columns psi_form_median, psi_form_lower, and psi_form_upper to psi, psi_l, and psi_u, respectively
+colnames(results_df)[colnames(results_df) == "psi_form_median"] <- "psi"
+colnames(results_df)[colnames(results_df) == "psi_form_lower"] <- "psi_l"
+colnames(results_df)[colnames(results_df) == "psi_form_upper"] <- "psi_u"
+
+results_df <- results_df %>% 
+  select(c(day_inf, n, alpha, alpha_l, alpha_u), everything())
+
+# export the results
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results"
+setwd(path_results)
+write.csv(results_df, "psi_time_sensitivity_n_100000_n-iter_100000.csv", row.names = FALSE)
+
+```
+
+## Plotting psi at different day_inf
+
+```{r}
+# factor day_inf
+results_df$day_inf <- factor(df3$day_inf, levels = df3$day_inf)
+
+plt2 <- ggplot(results_df) +
+  geom_errorbar(aes(day_inf, ymin = psi_delta_lower, ymax = psi_delta_upper), 
+                width = 0.1, size = 0.5, alpha = 0.8, colour = "black") +
+  
+  geom_point(aes(x = day_inf, y = psi_delta_median), 
+             shape = 21, fill = "lightblue", size = 3) + 
+  scale_y_continuous(breaks = seq(0, 15, by = 5), limits = c(0, 16), 
+                     expand = c(0, 0)) +
+  theme_classic() + 
+  theme(text = element_text(family = "Helvetica"),
+        axis.text.y = element_text(size =  11, colour = "black"),
+        axis.text.x = element_text(size =  11, colour = "black"),
+        axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = 0.6, colour = "black"),
+        axis.ticks.length = unit(0.25, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = 0.6),
+        legend.position = "none")
+plt2
+```
+
+# Synthetic data for different sample size.
+
+We want to see the behavior of error in psi estimates with different sample sizes. We will generate synthetic data for different sample sizes and see how the error in psi estimates changes. Also, the values of the other parametersL rho_c, phi_c, psi_c, alpha, and beta will be kept taken as equal to their respective median values from 58 estimates.
+
+```{r}
+
+# Sourcing functions
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi.R")
+source("formalism.R")
+
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data)
+df <- read.csv("./data_v8.csv")
+
+# Median values of parameters
+rho_median <- median(df$rho_c)
+psi_median <- median(df$psi_c)
+phi_median <- median(df$phi_c)
+alpha_median <- 0.94
+beta_median <- 0.99
+
+# Sample sizes to be considered
+sample_sizes <- c(500, 1000, 5000, 10000, 50000, 100000, 500000)
+results_list <- vector("list", length(sample_sizes))
+
+set.seed(123)
+for (i in seq_along(sample_sizes)) {
+  n <- sample_sizes[i]
+  n_iter_mc <- 100000
+  rho_true <- rho_median
+  psi_true <- psi_median
+  phi_true <- phi_median
+  
+  alpha_true <- alpha_median
+  beta_true <- beta_median
+  # alpha and beta parameters for beta distribution will their values for the median of sen and spe
+  sen_a <- 61
+  sen_b <- 4.3
+  spe_a <- 100
+  spe_b <- 0.1
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic(n, rho_true, psi_true, phi_true, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  out_form <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)
+  psi_delta = as.numeric(abs(psi_true - out_form$psi_form)*100/psi_true)
+  
+  # Store results in data frame
+  vars <- list(
+    n = n,
+    
+    psi_form_median = as.numeric(quantile(out_form$psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(out_form$psi_form, 0.25)),
+    psi_form_upper = as.numeric(quantile(out_form$psi_form, 0.75)),
+    
+    psi_delta_median = as.numeric(quantile(psi_delta, 0.5)),
+    psi_delta_lower = as.numeric(quantile(psi_delta, 0.25)),
+    psi_delta_upper = as.numeric(quantile(psi_delta, 0.75))
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  results_list[[i]] <- study_res
+}
+
+
+```
+
+```{r}
+results_df <- do.call(rbind, results_list)
+
+# export the results
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results"
+setwd(path_results)
+write.csv(results_df, "psi_sample_size_n-iter_100000.csv", row.names= FALSE)
+
+```
+
+```{r}
+# Plotting psi_delta at different sample sizes
+# Convert n to factor
+results_df$n <- factor(results_df$n, levels = sample_sizes)
+plt3 <- ggplot(results_df) +
+  geom_errorbar(aes(n, ymin = psi_delta_lower, ymax = psi_delta_upper), 
+                width = 0.1, size = 0.5, alpha = 0.8, colour = "black") +
+  
+  geom_point(aes(x = n, y = psi_delta_median), 
+             shape = 21, fill = "lightblue", size = 3) + 
+  # scale_y_continuous(breaks = seq(0, 15, by = 5), limits = c(0, 16), 
+  #                    expand = c(0, 0)) +
+  theme_minimal() + 
+  theme(text = element_text(family = "Helvetica"),
+        axis.text = element_text(size = s_text, colour = "black"),
+        axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+        axis.ticks.length = unit(length_tick, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+plt3
+```

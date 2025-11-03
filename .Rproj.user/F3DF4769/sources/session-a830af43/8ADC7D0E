@@ -1,0 +1,26 @@
+{
+    "id": "8ADC7D0E",
+    "path": "~/ubuntu_research/Research/adjusted_psi/asymptomatic_prevalence/scripts/19_synthetic_validation_plot.R",
+    "project_path": "scripts/19_synthetic_validation_plot.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1762167028762.0,
+    "source_on_save": false,
+    "relative_order": 10,
+    "properties": {
+        "source_window_id": "wyfk3bqw8b5sj",
+        "Source": "Source",
+        "cursorPosition": "50,0",
+        "scrollLine": "18"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1762173574,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1762173574543,
+    "read_only": false,
+    "read_only_alternatives": []
+}

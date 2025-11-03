@@ -1,0 +1,8 @@
+"0","df_ref <- read.csv(here(""data/data_main.csv""))"
+"0",""
+"0","df_ref$alpha <- round(df_ref$alpha, 2)"
+"0","df_ref$beta  <- round(df_ref$beta, 2)"
+"0","df_ref$alpha_l <- round(df_ref$alpha_l, 2)"
+"0","df_ref$alpha_u <- round(df_ref$alpha_u, 2)"
+"0","df_ref$beta_l  <- round(df_ref$beta_l, 2)"
+"0","df_ref$beta_u  <- round(df_ref$beta_u, 2)"

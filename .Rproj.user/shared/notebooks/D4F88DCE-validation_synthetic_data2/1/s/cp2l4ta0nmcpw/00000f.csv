@@ -1,0 +1,3 @@
+"0","path_data3 <- ""~/ubuntu_research/Research/adjusted_psi/data/final_data"""
+"0","setwd(path_data3)"
+"0","df3 <- read.csv(""./pcr_sens_time.csv"")"

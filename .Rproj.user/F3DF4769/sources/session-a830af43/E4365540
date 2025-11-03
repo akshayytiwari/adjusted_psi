@@ -1,0 +1,28 @@
+{
+    "id": "E4365540",
+    "path": "~/ubuntu_research/Research/adjusted_psi/asymptomatic_prevalence/analysis/Table3_validation_against_PCR.Rmd",
+    "project_path": "analysis/Table3_validation_against_PCR.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1762175426962.0,
+    "source_on_save": false,
+    "relative_order": 6,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "127,92",
+        "scrollLine": "122",
+        "last_setup_crc32": "a830af43d70e0c5f"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1762177688,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1762177688069,
+    "read_only": false,
+    "read_only_alternatives": []
+}

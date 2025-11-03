@@ -1,0 +1,36 @@
+# Finding distribution of psi using Monte Carlo simulation based on correction formula
+
+path_code <- "~/ubuntu_research/Research/adjusted_psi/asymptomatic_prevalence"
+setwd(path_code)
+source('scripts/01_formalism.R')
+set.seed(123)
+monte_carlo <- function (n, 
+                         sp,
+                         sn,
+                         n_iter, 
+                         rho_c, 
+                         psi_c, 
+                         phi_c, 
+                         alpha_a, 
+                         alpha_b, 
+                         beta_a, 
+                         beta_b) {
+  
+  eps <- 1e-8
+  rho_c_mc <- rbinom(n_iter, n, rho_c) / n
+  psi_c_mc <- rbinom(n_iter, sp, psi_c) / sp
+  phi_c_mc <- rbinom(n_iter, sn, phi_c) / sn
+  alpha_mc <- rbeta(n_iter, alpha_a, alpha_b)
+  beta_mc <- rbeta(n_iter, beta_a, beta_b)
+  
+  psi <- eta <- numeric(n_iter)
+  for (k in 1:n_iter) {
+
+    psi[k] <- correction(rho_c_mc[k], psi_c_mc[k], phi_c_mc[k], alpha_mc[k], beta_mc[k])
+
+    eta[k] <- (psi[k] - psi_c_mc[k])*100/psi_c_mc[k]
+    
+  }
+  
+  return(eta)
+}

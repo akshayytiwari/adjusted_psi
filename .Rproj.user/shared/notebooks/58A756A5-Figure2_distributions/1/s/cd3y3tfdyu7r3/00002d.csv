@@ -1,0 +1,6 @@
+"0",""
+"0","# Compute R²"
+"0","res_rsq <- compute_eta_rsq(df, monte_carlo, n_iter = 10000)"
+"0",""
+"0","# Display summary"
+"0","res_rsq$summary"

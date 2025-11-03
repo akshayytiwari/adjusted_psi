@@ -1,0 +1,42 @@
+# ============================================================
+# 17_plot_formalism_validation.R
+# ============================================================
+# Description:
+#   Plotting and summary utilities for formalism validation figures (S3a/b)
+# ============================================================
+
+library(ggplot2)
+library(DescTools)
+library(dplyr)
+
+plot_formalism_validation <- function(results_df, label = "synthetic", out_fig_dir = "../outputs/figures") {
+  results_df <- results_df %>% mutate(psi_true = as.numeric(psi_true))
+  
+  p <- ggplot(results_df, aes(x = psi_true, y = psi_form_median)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    geom_errorbar(aes(ymin = psi_form_lower, ymax = psi_form_upper),
+                  width = 0.01, color = "black", alpha = 0.7) +
+    geom_point(shape = 21, fill = "skyblue", size = 3) +
+    scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    labs(x = expression(psi[true]), y = expression(hat(psi)[form])) +
+    theme_minimal(base_family = "Helvetica") +
+    theme(axis.text = element_text(size = 11, colour = "black"),
+          panel.border = element_rect(colour = "black", fill = NA, size = 0.6))
+  
+  out_file <- file.path(out_fig_dir, paste0("FigureS3_", label, "_validation.png"))
+  ggsave(out_file, p, width = 7, height = 6, dpi = 300)
+  message("Saved plot: ", out_file)
+  return(p)
+}
+
+summarize_formalism_accuracy <- function(results_df) {
+  tibble(
+    mean_abs_error = mean(abs(results_df$psi_form_delta), na.rm = TRUE),
+    median_abs_error = median(abs(results_df$psi_form_delta), na.rm = TRUE),
+    median_width = median(results_df$psi_form_width, na.rm = TRUE),
+    coverage = mean(results_df$psi_true >= results_df$psi_form_lower &
+                      results_df$psi_true <= results_df$psi_form_upper, na.rm = TRUE),
+    ccc = CCC(results_df$psi_form_median, results_df$psi_true)$rho.c
+  )
+}

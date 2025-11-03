@@ -1,0 +1,25 @@
+# Finding distribution of eta using equation using equation (2) of the main text
+
+path_code <- "~/ubuntu_research/Research/adjusted_psi/asymptomatic_prevalence"
+setwd(path_code)
+source('scripts/01_formalism.R')
+# set.seed(123)
+monte_carlo <- function (n, sp, sn, n_iter,
+                         rho_c, psi_c, phi_c,
+                         alpha_a, alpha_b, beta_a, beta_b) {
+  
+  alpha <- rbeta(n_iter, alpha_a, alpha_b)
+  beta  <- rbeta(n_iter, beta_a, beta_b)
+  rho_c <- rbinom(n_iter, n, rho_c) / n
+  psi_c <- rbinom(n_iter, sp, psi_c) / sp
+  phi_c <- rbinom(n_iter, sn, phi_c) / sn
+  
+  psi_hat <- correction(rho_c, psi_c, phi_c, alpha, beta)
+  
+  psi_q <- quantile(psi_hat, probs = c(0.25, 0.5, 0.75), na.rm = TRUE)
+  eta_q <- quantile(100 * (psi_hat - psi_c) / psi_c,
+                    probs = c(0.25, 0.5, 0.75),
+                    na.rm = TRUE)
+  return(list(psi = psi_q, eta = eta_q))
+  
+}

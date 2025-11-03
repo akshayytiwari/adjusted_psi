@@ -1,0 +1,205 @@
+---
+title: Validation of estimates of our formalism with different ground data
+---
+
+```{r}
+rm(list = ls())
+
+suppressPackageStartupMessages({
+  library(tidyverse) 
+  library(readr)
+})
+```
+
+Paths
+```{r}
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+```
+
+
+# Data extraction and manipulation
+```{r}
+setwd(path_data)
+df_ab <- read.csv("validation_ab_data.csv")
+df_pcr <- read.csv("validation_pcr_data.csv")
+head(df_ab)
+head(df_pcr)
+```
+
+# Assuming distributions of sensitivity and specificity for PCR tests
+Friedman et al. performed both the PCR and Ab tests, Menachemi et al performed only PCR test, and Sullivan et al. and Pathela et al. performed Ab test.
+```{r}
+
+# We have assumed the following sensitivity and specificity values for Ab tests based on the literature
+sen_l <- 0.81
+sen_u <- 0.91
+sen_mean <- 0.87
+spe_l <- 0.96
+spe_u <- 1
+spe_mean <- 1
+
+#  Widening interval of sensitivity by 10% on both sides to account for variability in different test kits
+sen_l <- sen_l - 0.09
+sen_u <- sen_u + 0.09
+
+
+df_pcr$alpha_l[1:3] <- sen_l
+df_pcr$alpha[1:3] <- sen_mean
+df_pcr$alpha_u[1:3] <- sen_u
+
+df_pcr$beta_l[1:3] <- spe_l
+df_pcr$beta[1:3] <- spe_mean
+df_pcr$beta_u[1:3] <- spe_u
+
+```
+
+## Estimating Beta distribution from above values for Ab and PCR data
+### Optimizing function
+```{r}
+path_beta_function <- "~/ubuntu_research/Research/adjusted_psi/codes/final_codes/beta-distribution-parameters"
+setwd(path_beta_function)
+source("beta_dis.R")
+
+```
+
+### Beta distribution parameters
+```{r}
+# Ab data
+## alpha
+alpha_beta <- as.data.frame(matrix(NA, nrow = nrow(df_ab), ncol = 2))
+for (i in 1:nrow(df_ab)) {
+  alpha_beta[i,] <- estimate_beta(c(df_ab$alpha_l[i], df_ab$alpha[i], df_ab$alpha_u[i]))
+}
+colnames(alpha_beta) <- c("alpha_a", "alpha_b")
+
+# beta
+beta_beta <- as.data.frame(matrix(NA, nrow = nrow(df_ab), ncol = 2))
+for (i in 1:nrow(df_ab)){
+  beta_beta[i,] <- estimate_beta(c(df_ab$beta_l[i], df_ab$beta[i], df_ab$beta_u[i]))
+}
+colnames(beta_beta) <- c("beta_a", "beta_b")
+
+df_ab$alpha_a <- alpha_beta$alpha_a
+df_ab$alpha_b <- alpha_beta$alpha_b
+df_ab$beta_a <- beta_beta$beta_a
+df_ab$beta_b <- beta_beta$beta_b
+colnames(df_ab)
+
+# pcr data
+## alpha
+alpha_beta <- as.data.frame(matrix(NA, nrow = nrow(df_pcr), ncol = 2))
+for (i in 1:nrow(df_pcr)) {
+  alpha_beta[i,] <- estimate_beta(c(df_pcr$alpha_l[i], df_pcr$alpha[i], df_pcr$alpha_u[i]))
+}
+colnames(alpha_beta) <- c("alpha_a", "alpha_b")
+
+# beta
+beta_beta <- as.data.frame(matrix(NA, nrow = nrow(df_pcr), ncol = 2))
+for (i in 1:nrow(df_pcr)){
+  beta_beta[i,] <- estimate_beta(c(df_pcr$beta_l[i], df_pcr$beta[i], df_pcr$beta_u[i]))
+}
+colnames(beta_beta) <- c("beta_a", "beta_b")
+
+df_pcr$alpha_a <- alpha_beta$alpha_a
+df_pcr$alpha_b <- alpha_beta$alpha_b
+df_pcr$beta_a <- beta_beta$beta_a
+df_pcr$beta_b <- beta_beta$beta_b
+colnames(df_pcr)
+
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results/"
+setwd(path_results)
+write.csv(df_ab, "validation_ab_data_final.csv", row.names = FALSE)
+write.csv(df_pcr, "validation_pcr_data_final.csv", row.names = FALSE)
+
+```
+
+```{r}
+psi_mc <- function(data, n_iter) {
+  # Pre-allocate output
+  n_rows <- nrow(data)
+  results <- data.frame(
+    study = data$study,
+    psi_l = NA_real_,
+    psi_median = NA_real_,
+    psi_u = NA_real_
+  )
+  
+  # Vectorized Monte Carlo per-row
+  for (i in 1:n_rows) {
+    # Vectorized sampling
+    alpha <- rbeta(n_iter, data$alpha_a[i], data$alpha_b[i])
+    beta  <- rbeta(n_iter, data$beta_a[i],  data$beta_b[i])
+    rho_c <- rbinom(n_iter, data$n[i],    data$rho_c[i]) / data$n[i]
+    psi_c <- rbinom(n_iter, data$sp[i],   data$psi_c[i]) / data$sp[i]
+    phi_c <- rbinom(n_iter, data$sn[i],   data$phi_c[i]) / data$sn[i]
+
+    # Calculations (all vectorized)
+    num <- rho_c * (1 - rho_c) * (psi_c - 1 + phi_c) * (alpha + beta - 1)
+    denom <- (rho_c + beta - 1) * (psi_c * rho_c * (1 - alpha) - alpha * (1 - phi_c) * (1 - rho_c))
+    denom[abs(denom) < 1e-8] <- NA # Avoid instability
+    
+    rho_temp <- (rho_c + beta - 1) / (alpha + beta - 1)
+    rho_temp[is.na(rho_temp) | (rho_temp < 0) | (rho_temp > 1)] <- NA
+    
+    psi_temp <- 1 - num / denom
+    psi_temp[is.na(psi_temp) | (psi_temp < 0) | (psi_temp > 1)] <- NA
+
+    # Store quantiles
+    results$psi_l[i]      <- quantile(psi_temp,  0.25, na.rm = TRUE)
+    results$psi_median[i] <- quantile(psi_temp,  0.5,   na.rm = TRUE)
+    results$psi_u[i]      <- quantile(psi_temp,  0.75, na.rm = TRUE)
+  }
+  return(results)
+}
+
+df_ab_psi <- psi_mc(df_ab, 100000)
+df_ab$psi_l <- df_ab_psi$psi_l
+df_ab$psi_median <- df_ab_psi$psi_median
+df_ab$psi_u <- df_ab_psi$psi_u
+df_pcr_psi <- psi_mc(df_pcr, 100000)
+df_pcr$psi_l <- df_pcr_psi$psi_l
+df_pcr$psi_median <- df_pcr_psi$psi_median
+df_pcr$psi_u <- df_pcr_psi$psi_u
+# For Pathela et al.
+## We assume that infection due to other conditions is rare
+df_menachemi <- df_pcr[3,]
+
+psi_mc_menachemi <- function(data, n_iter) {
+  # Pre-allocate output
+  n_rows <- nrow(data)
+  results <- data.frame(
+    study = data$study,
+    psi_l = NA_real_,
+    psi_median = NA_real_,
+    psi_u = NA_real_
+  )
+  
+  # Vectorized Monte Carlo per-row
+  for (i in 1:n_rows) {
+    # Vectorized sampling
+    alpha <- rbeta(n_iter, data$alpha_a[i], data$alpha_b[i])
+    beta  <- rbeta(n_iter, data$beta_a[i],  data$beta_b[i])
+    # beta = 1
+    rho_c <- rbinom(n_iter, data$n[i],    data$rho_c[i]) / data$n[i]
+    psi_c <- rbinom(n_iter, data$sp[i],   data$psi_c[i]) / data$sp[i]
+
+    # Calculations (all vectorized)
+    rho_temp <- (rho_c + beta - 1) / (alpha + beta - 1)
+    psi_temp <- 1 - rho_c*(1 - psi_c)/(alpha*rho_temp)
+    psi_temp[is.na(psi_temp) | (psi_temp < 0) | (psi_temp > 1)] <- NA
+
+    # Store quantiles
+    results$psi_l[i]      <- quantile(psi_temp,  0.25, na.rm = TRUE)
+    results$psi_median[i] <- quantile(psi_temp,  0.5,   na.rm = TRUE)
+    results$psi_u[i]      <- quantile(psi_temp,  0.75, na.rm = TRUE)
+  }
+  return(results)
+}
+
+df_psi_menachemi <- psi_mc_menachemi(df_menachemi, 100000)
+df_pcr$psi_l[3] <- df_psi_menachemi$psi_l
+df_pcr$psi_median[3] <- df_psi_menachemi$psi_median
+df_pcr$psi_u[3] <- df_psi_menachemi$psi_u
+# df_pcr <- cbind(df_pcr, df_psi_menachemi)
+
+```

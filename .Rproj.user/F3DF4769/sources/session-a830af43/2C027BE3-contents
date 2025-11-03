@@ -1,0 +1,108 @@
+---
+title: Comparison of our formalism (with Monte Carlo) with synthetic data
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(tibble)
+```
+
+
+## Synthetic data generation
+
+```{r}
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data)
+df3 <- read.csv("pcr_sens_time_v2.csv")
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi_zero-phi.R")
+source("formalism_zero_phi.R")
+
+# Miscellaneous checks
+results_list <- vector("list", nrow(df3))
+
+## changing n
+# df3$n <- 10000
+
+set.seed(123)
+for (i in seq_len(nrow(df3))) {
+  study <- df3[i, ]
+  n <- 100000
+  n_iter_mc <- 100000
+  rho_true <- study$rho_true
+  psi_true <- study$psi_true
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic_zero_phi(n, rho_true, psi_true, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  psi_form <- model_formalism_zero_phi(n, n_sym_pos + n_asym_pos, 
+                                       n_iter_mc, rho_c, psi_c, sen_a, sen_b, spe_a, spe_b)
+  psi_delta = as.numeric(abs(psi_true - psi_form)*100/psi_true)
+  
+  # Store results in data frame
+  
+  vars <- list(
+    n = study$n,
+    
+    psi_form_median = as.numeric(quantile(psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(psi_form, 0.25)),
+    psi_form_upper = as.numeric(quantile(psi_form, 0.75)),
+    
+    psi_delta_median = as.numeric(quantile(psi_delta, 0.5)),
+    psi_delta_lower = as.numeric(quantile(psi_delta, 0.25)),
+    psi_delta_upper = as.numeric(quantile(psi_delta, 0.75))
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+}
+results_df <- do.call(rbind, results_list)
+
+```
+
+```{r}
+results_df$alpha <- df3$alpha
+results_df$alpha_l <- df3$alpha_l
+results_df$alpha_u <- df3$alpha_u
+results_df$day_inf <- df3$day_inf
+
+# rename columns psi_form_median, psi_form_lower, and psi_form_upper to psi, psi_l, and psi_u, respectively
+colnames(results_df)[colnames(results_df) == "psi_form_median"] <- "psi"
+colnames(results_df)[colnames(results_df) == "psi_form_lower"] <- "psi_l"
+colnames(results_df)[colnames(results_df) == "psi_form_upper"] <- "psi_u"
+
+results_df <- results_df %>% 
+  select(c(day_inf, n, alpha, alpha_l, alpha_u), everything())
+
+# export the results
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results"
+setwd(path_results)
+write.csv(results_df, "psi_time_sensitivity_n_100000_n-iter_100000.csv", row.names = FALSE)
+
+```
+

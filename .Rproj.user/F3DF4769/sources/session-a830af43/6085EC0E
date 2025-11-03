@@ -1,0 +1,26 @@
+{
+    "id": "6085EC0E",
+    "path": "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi/generation_psi.R",
+    "project_path": null,
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1762167825876.0,
+    "source_on_save": false,
+    "relative_order": 16,
+    "properties": {
+        "source_window_id": "wyfk3bqw8b5sj",
+        "Source": "Source",
+        "cursorPosition": "10,59",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1759143048,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1759143048,
+    "read_only": false,
+    "read_only_alternatives": []
+}

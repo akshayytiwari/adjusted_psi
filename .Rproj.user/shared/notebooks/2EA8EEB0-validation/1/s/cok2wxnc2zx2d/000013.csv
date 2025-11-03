@@ -1,0 +1,4 @@
+"0","setwd(path_data)"
+"0","df_ab <- read.csv(""validation_ab_data.csv"")"
+"0","df_pcr <- read.csv(""validation_pcr_data.csv"")"
+"0","head(df_ab)"

@@ -1,0 +1,39 @@
+# ============================================================
+# 12_beta_dis.R
+# ============================================================
+# Description:
+#   Estimate parameters of a Beta distribution
+#   from 2.5%, 50%, 97.5% quantiles.
+# ============================================================
+
+library(stats)
+
+#' Estimate parameters of a Beta distribution from quantiles
+#'
+#' @param q_vals Numeric vector of three quantiles (0.025, 0.5, 0.975)
+#' @param search_range Range for α and β (default c(0.5, 100))
+#'
+#' @return Numeric vector c(alpha, beta)
+#'
+#' @export
+estimate_beta <- function(q_vals, search_range = c(0.5, 100)) {
+  best_loss <- Inf
+  best_params <- c(NA, NA)
+  p_vals <- c(0.025, 0.5, 0.975)
+  
+  a_seq <- seq(search_range[1], search_range[2], length.out = 500)
+  b_seq <- seq(search_range[1], search_range[2], length.out = 500)
+  
+  for (a in a_seq) {
+    qbeta_a <- qbeta(p_vals, a, b_seq)
+    losses <- colSums((qbeta_a - q_vals)^2)
+    b <- b_seq[which.min(losses)]
+    loss <- min(losses)
+    if (loss < best_loss) {
+      best_loss <- loss
+      best_params <- c(a, b)
+    }
+  }
+  
+  return(c(alpha = best_params[1], beta = best_params[2]))
+}

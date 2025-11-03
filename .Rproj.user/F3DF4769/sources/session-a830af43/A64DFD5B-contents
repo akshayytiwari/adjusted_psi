@@ -1,0 +1,61 @@
+---
+title: "Synthetic data generation for φ_c = 0 (PCR case)"
+author: "Akshay Tiwari et al."
+output:
+  html_document:
+    toc: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+source(here("scripts/10_generation_psi_zero_phi.R"))
+source(here("scripts/11_formalism_zero_phi.R"))
+source(here("scripts/12_beta_dis.R"))
+```
+
+# Data extraction and modification
+```{r}
+df <- read.csv(here("data/data_main.csv"))
+df1 <- read.csv(here("data/data_pcr_sens_time.csv"))
+
+# Assuming rho_c and psi_c as true values
+df1 <- df1 %>% 
+  mutate(rho_true = median(df$rho_c), psi_true = median(df$psi_c))
+```
+
+# Test simulation and formalism
+```{r}
+# Example parameters
+
+n <- 1000
+rho <- 0.4
+psi <- 0.4
+sen_a <- 35; sen_b <- 2
+spe_a <- 17; spe_b <- 1
+
+# Generate synthetic dataset
+
+out_synth <- synthetic_zero_phi(n, rho, psi, sen_a, sen_b, spe_a, spe_b)
+
+# Analytical correction
+
+psi_form <- model_formalism_zero_phi(
+n = n, sp = out_synth$n_sym_pos + out_synth$n_asym_pos,
+n_iter = 1000,
+rho_c = (out_synth$n_sym_pos + out_synth$n_asym_pos)/n,
+psi_c = out_synth$n_asym_pos / (out_synth$n_sym_pos + out_synth$n_asym_pos),
+sen_a = sen_a, sen_b = sen_b, spe_a = spe_a, spe_b = spe_b
+)
+
+median(psi_form)
+
+# Plot distribution of ψ estimates
+
+ggplot(data.frame(psi_form), aes(x = psi_form)) +
+geom_histogram(fill = "steelblue", color = "black", bins = 40) +
+theme_minimal(base_family = "Helvetica") +
+labs(x = expression(hat(psi)), y = "Count")
+
+```
+

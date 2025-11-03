@@ -1,0 +1,52 @@
+model_formalism <- function (n, 
+                             sp,
+                             sn,
+                             n_iter, 
+                             rho_c, 
+                             psi_c, 
+                             phi_c, 
+                             sen_a, 
+                             sen_b, 
+                             spe_a, 
+                             spe_b) {
+  
+  eps <- 1e-8
+  rho_c_mc <- rbinom(n_iter, n, rho_c) / n
+  psi_c_mc <- rbinom(n_iter, sp, psi_c) / sp
+  phi_c_mc <- rbinom(n_iter, sn, phi_c) / sn
+  sen_mc <- rbeta(n_iter, sen_a, sen_b)
+  spe_mc <- rbeta(n_iter, spe_a, spe_b)
+  
+  model_form <- function(rho_c, psi_c, phi_c, sen, spe) {
+    num <- rho_c * (1 - rho_c) * (psi_c - 1 + phi_c) * (sen + spe - 1)
+    denom <- (rho_c + spe - 1) * (psi_c * rho_c * (1 - sen) - sen * (1 - phi_c) * (1 - rho_c))
+    denom <- ifelse(abs(denom) < eps, NA, denom)
+    
+    rho_temp <- (rho_c + spe - 1) / (sen + spe - 1)
+    rho_form <- ifelse(is.na(rho_temp) | rho_temp < 0 | rho_temp > 1, NA, rho_temp)
+    
+    psi_temp <- 1 - num / denom
+    psi_form <- ifelse(is.na(psi_temp) | psi_temp < 0 | psi_temp > 1, NA, psi_temp)
+    
+    c(rho_form, psi_form)
+  }
+  
+  rho_form <- psi_form <- numeric(n_iter)
+  for (k in 1:n_iter) {
+    vals <- model_form(rho_c_mc[k], psi_c_mc[k], phi_c_mc[k], sen_mc[k], spe_mc[k])
+    rho_form[k] <- vals[1]
+    psi_form[k] <- vals[2]
+  }
+  
+  valid_rho_form <- rho_form[!is.na(rho_form)]
+  valid_psi_form <- psi_form[!is.na(psi_form)]
+  
+  return (list(
+    rho_form = valid_rho_form,
+    psi_form = valid_psi_form
+  ))
+}
+
+# Toy example (to ensure if model is giving correct results)
+# out_form <- model_formalism(1000, 100, 900, 1000, 0.4, 0.4, 0.25, 35, 2, 17, 1)
+# rho_form_median <- as.numeric(quantile(out_form$rho_form, 0.5))

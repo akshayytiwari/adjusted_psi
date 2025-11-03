@@ -1,0 +1,59 @@
+country,article,study_start_date,study_end_date,recall_start_date,recall_period_given,mid_date,recall_period_calculated
+Brazil,Menezes et al.,2020-06-21,2020-06-24,2020-03-01,12 weeks,2020-06-22,12
+Brazil,Maura da Silva et al.,2020-07-27,2020-08-08,2020-01-30,NA,2020-08-02,26
+Brazil,Terças-Trettel,2020-09-16,2020-10-15,2020-03-01,NA,2020-09-30,31
+Brazil,Moura de Albuquerque et al.,2020-08-11,2020-08-13,2020-01-30,NA,2020-08-12,28
+Brazil,Moura de Albuquerque et al.,2020-08-11,2020-08-13,2020-01-30,NA,2020-08-12,28
+Brazil,Moura de Albuquerque et al.,2020-08-11,2020-08-13,2020-01-30,NA,2020-08-12,28
+Cameroon,Nwosu et al.,2020-10-14,2020-11-26,2020-03-01,NA,2020-11-04,36
+Chile,Vial et al.,2020-09-25,2020-11-25,2020-01-30,NA,2020-10-25,39
+China,Li et al,2020-04-10,2020-04-18,2019-12-01,NA,2020-04-14,19
+Colombia,Garay et al.,2020-07-15,2020-11-15,NA,3 months,2020-09-14,13
+Colombia,Serrano-Coll et al.,2020-12-01,2020-12-31,2020-01-30,NA,2020-12-16,46
+Denmark,Espenhain et al,2020-08-15,2020-12-11,2020-02-01,NA,2020-10-13,36
+France,Carrat et al.,2020-05-04,2020-06-23,NA,2 weeks,2020-05-29,2
+France,Rouquette et al.,2020-05-02,2020-11-30,2020-02-01,NA,2020-08-16,28
+France,Beaumont et al.,2020-06-29,2020-07-17,2020-02-24,NA,2020-07-08,19
+Germany,Santos-Hovener et al.,2020-05-20,2020-06-09,2020-02-01,NA,2020-05-30,17
+Germany,Weis et al.,2020-05-13,2020-05-22,NA,6 weeks,2020-05-17,6
+Hungary,Merkely et al.,2020-05-01,2020-05-16,2020-01-03,NA,2020-05-08,18
+India,Murhekar et al.,2020-08-18,2020-09-20,2020-03-01,NA,2020-09-03,27
+India,Selvaraju et al.,2020-07-01,2020-07-31,NA,3 months,2020-07-16,13
+India,Kumar et al.,2020-10-08,2020-10-15,2020-01-30,NA,2020-10-11,37
+India,Sharma et al.,2020-08-01,2020-08-07,2020-01-30,NA,2020-08-04,27
+India,Sharma et al.,2020-10-01,2020-10-07,2020-01-30,NA,2020-10-04,35
+India,Sharma et al.,2020-09-01,2020-09-07,2020-01-30,NA,2020-09-04,31
+India,Kumar et al.,2020-09-30,2020-10-01,NA,6 months,2020-09-30,26
+India,Khan et al.,2020-10-17,2020-11-04,NA,3 months,2020-10-26,13
+Iran,Poustchi et al.,2020-04-17,2020-06-02,NA,12 weeks,2020-05-10,12
+Iran,Shadmani et al.,2020-11-15,2020-12-20,2020-01-30,NA,2020-12-02,44
+Ireland,Heavey et al.,2020-06-22,2020-07-16,2020-02-28,NA,2020-07-04,18
+Italy,Melotti et al.,2020-05-26,2020-06-08,2020-01-30,NA,2020-06-01,18
+Italy,Pagani et al.,2020-05-18,2020-06-07,2020-02-01,NA,2020-05-28,17
+Kenya,Ngere et al.,2020-11-02,2020-11-23,NA,12 months,2020-11-12,52
+Maldives,Abdul-Raheem et al.,2020-10-15,2020-11-16,2020-01-30,NA,2020-10-31,39
+Mali,Sagara et al.,2020-07-28,2020-10-16,2020-03-01,NA,2020-09-06,27
+Mexico,Basto-Abreu et al.,2020-08-15,2020-11-15,2020-03-01,NA,2020-09-30,30
+Mozambique,Arnaldo et al.,2020-08-04,2020-08-24,NA,30 days,2020-08-14,4
+Mozambique,Arnaldo et al.,2020-07-06,2020-07-13,NA,30 days,2020-07-09,4
+Mozambique,Arnaldo et al.,2020-08-10,2020-08-21,NA,30 days,2020-08-15,4
+Netherlands,Vos et al.,2020-03-31,2020-05-11,2020-01-30,NA,2020-04-20,12
+Nigeria,Okpala et al.,2020-12-08,2020-12-15,2020-01-30,NA,2020-12-11,45
+Pakistan,Nisar et al.,2020-04-15,2020-08-22,NA,2 months,2020-06-18,9
+Peru,Huamani et al.,2020-09-12,2020-09-27,NA,3 months,2020-09-19,13
+Peru,Diaz-Velez et al.,2020-07-24,2020-07-10,2020-01-30,NA,2020-07-17,24
+Peru,Reyes-Vega et al.,2020-06-28,2020-07-09,2020-01-30,NA,2020-07-03,22
+Peru,Moyano et al.,2020-11-11,2020-11-30,2020-01-30,NA,2020-11-20,42
+Portugal,Castro et al.,2020-09-08,2020-10-14,2020-01-30,NA,2020-09-26,34
+Portugal,Kislaya et al.,2020-05-21,2020-07-08,2020-03-01,NA,2020-06-14,15
+Senegal,Talla et al.,2020-10-25,2020-11-26,NA,6 months,2020-11-10,26
+Spain,Perez-Gomez et al.,2020-04-27,2020-06-22,2020-01-30,NA,2020-05-25,17
+Switzerland,Richard et al.,2020-04-06,2020-06-30,2020-01-01,NA,2020-05-18,20
+UAE,Alsuwaidi et al.,2020-07-19,2020-08-14,2020-01-30,NA,2020-08-01,26
+UK,Ward et al.,2020-06-20,2020-07-13,2020-01-30,NA,2020-07-01,22
+UK,Ward et al.,2020-06-20,2020-07-13,2020-01-30,NA,2020-07-01,22
+UK,Ward et al.,2020-06-20,2020-07-13,2020-01-30,NA,2020-07-01,22
+US,Sullivan et al.,2020-08-09,2020-12-08,2020-01-01,NA,2020-10-08,40
+US,Lamba et al.,2020-08-15,2020-12-15,2020-01-01,NA,2020-10-15,41
+US,Chamberlain et al.,2020-08-09,2020-12-08,2020-01-01,NA,2020-10-08,40
+US,Pathela et al.,2020-05-13,2020-07-21,2020-01-01,NA,2020-06-16,24

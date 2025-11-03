@@ -1,0 +1,948 @@
+---
+title: Comparison of our formalism and Mitchell et al. with synthetic data
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(rjags)
+library(coda)
+library(tibble)
+```
+
+# --- 1. Read study parameters and simulate data, fit models in a loop ---
+
+```{r}
+path <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path)
+df <- read.csv("./data_v8.csv")
+
+results_list <- vector("list", nrow(df))
+
+# Sourcing functions
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi.R")
+source("mit_evol_psi.R")
+source("formalism.R")
+
+set.seed(123)
+for (i in seq_len(nrow(df))) {
+  study <- df[i, ]
+  n <- study$n
+  n_iter_mc <- 1000
+  rho <- study$rho_c
+  psi <- study$psi_c
+  phi <- study$phi_c
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic(n, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  out_form <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)
+  
+  # --- 3. Fit Bayesian (Mitchell et al.) method ---
+  x_simulated <- c(n_sym_pos, n_asym_pos, n_sym_neg, n_asym_neg)
+  out_mit <- model_mitchell(x_simulated, gamma_val = 1, sen_a, sen_b, spe_a, spe_b)
+
+  # Store results in data frame
+  
+  vars <- list(
+    article = study$article,
+    n = study$n,
+    
+    ## --- Formalism
+    rho_form_median = as.numeric(quantile(out_form$rho_form, 0.5)),
+    rho_form_lower = as.numeric(quantile(out_form$rho_form, 0.025)),
+    rho_form_upper = as.numeric(quantile(out_form$rho_form, 0.975)),
+    
+    psi_form_median = as.numeric(quantile(out_form$psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(out_form$psi_form, 0.025)),
+    psi_form_upper = as.numeric(quantile(out_form$psi_form, 0.975)),
+    
+    ## --- Bayesian (Mitchell et al.)
+    rho_mit_median = out_mit["P_Z_Median"],
+    rho_mit_lower = out_mit["P_Z_CrI_Lower"],
+    rho_mit_upper = out_mit["P_Z_CrI_Upper"],
+    
+    psi_mit_median = 1 - out_mit["P_SZ_Median"],
+    psi_mit_lower = 1 - out_mit["P_SZ_CrI_Upper"],
+    psi_mit_upper = 1 - out_mit["P_SZ_CrI_Lower"],
+    
+    phi_mit_median = out_mit["P_SB_Median"],
+    phi_mit_lower = out_mit["P_SB_CrI_Lower"],
+    phi_mit_upper = out_mit["P_SB_CrI_Upper"],
+    
+    sen_mit_median = out_mit["sen_Median"],
+    sen_mit_lower = out_mit["sen_CrI_Lower"],
+    sen_mit_upper = out_mit["sen_CrI_Upper"],
+    
+    spe_mit_median = out_mit["spe_Median"],
+    spe_mit_lower = out_mit["spe_CrI_Lower"],
+    spe_mit_upper = out_mit["spe_CrI_Upper"]
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+  cat(sprintf("Study %s completed \n", study$article))
+}
+
+```
+
+# --- 2. Combine results and acceptance rates ---
+```{r}
+results_df <- do.call(rbind, results_list)
+acc_rate_df <- do.call(rbind, acc_rate_list)
+
+results_df <- as.data.frame(results_df)
+results_df[] <- lapply(results_df, function(x) if(is.numeric(x)) round(x, 4) else x)
+
+# Sensitivity and specificity for formalism and Bayesian (non-evolving method)
+sen_form_list <- list()
+sen_form_median <- sen_form_lower <- sen_form_upper <- sen_form_delta <- sen_form_width <- numeric(nrow(df))
+
+spe_form_list <- list()
+spe_form_median <- spe_form_lower <- spe_form_upper <- spe_form_delta <- spe_form_width <- numeric(nrow(df))
+
+for (i in 1:nrow(df)) {
+  sen_form_list[[i]] <- rbeta(1000, df$alpha_a[i], df$alpha_b[i])
+  sen_form_median[i] <- median(sen_form_list[[i]])
+  sen_form_lower[i] <- as.numeric(quantile(sen_form_list[[i]], 0.025))
+  sen_form_upper[i] <- as.numeric(quantile(sen_form_list[[i]], 0.975))
+  sen_form_delta[i] <- (df$alpha[i] - sen_form_median[i])*100/df$alpha[i]
+  sen_form_width[i] <- sen_form_upper[i] - sen_form_lower[i]
+  
+  spe_form_list[[i]] <- rbeta(1000, df$beta_a[i], df$beta_b[i])
+  spe_form_median[i] <- median(spe_form_list[[i]])
+  spe_form_lower[i] <- as.numeric(quantile(spe_form_list[[i]], 0.025))
+  spe_form_upper[i] <- as.numeric(quantile(spe_form_list[[i]], 0.975))
+  spe_form_delta[i] <- (df$beta[i] - spe_form_median[i])*100/df$beta[i]
+  spe_form_width[i] <- spe_form_upper[i] - spe_form_lower[i]
+}
+
+
+# Adding columns
+results_df <- results_df %>%
+  mutate(
+    sp = df$sp,
+    asym_sp = df$asym_sp,
+    sn = df$sn,
+    sym_sn = df$sym_sn,
+    rho_true =df$rho_c,
+    psi_true = df$psi_c,
+    phi_true = df$phi_c,
+    sen_true = df$alpha,
+    spe_true = df$beta,
+    
+    # Formalism
+    rho_form_delta = (rho_true - results_df$rho_form_median)*100/rho_true,
+    rho_form_width = results_df$rho_form_upper - results_df$rho_form_lower,
+    
+    psi_form_delta = (psi_true - results_df$psi_form_median)*100/psi_true,
+    psi_form_width = results_df$psi_form_upper - results_df$psi_form_lower,
+    
+    sen_form_median = sen_form_median,
+    sen_form_lower = sen_form_lower,
+    sen_form_upper = sen_form_upper,
+    sen_form_delta = sen_form_delta,
+    sen_form_width = sen_form_width,
+    
+    spe_form_median = spe_form_median,
+    spe_form_lower = spe_form_lower,
+    spe_form_upper = spe_form_upper,
+    spe_form_delta = spe_form_delta,
+    spe_form_width = spe_form_width,
+    
+    # Bayesian (evolving sen and spe)
+    rho_mit_delta = (rho_true - results_df$rho_mit_median)*100/rho_true,
+    rho_mit_width = results_df$rho_mit_upper - results_df$rho_mit_lower,
+    
+    psi_mit_delta = (psi_true - results_df$psi_mit_median)*100/psi_true,
+    psi_mit_width = results_df$psi_mit_upper - results_df$psi_mit_lower,
+    
+    phi_mit_delta = (phi_true - results_df$phi_mit_median)*100/phi_true,
+    phi_mit_width = results_df$phi_mit_upper - results_df$phi_mit_lower,
+    
+    sen_mit_delta = (sen_true - results_df$sen_mit_median)*100/sen_true,
+    sen_mit_width = results_df$sen_mit_upper - results_df$sen_mit_lower,
+    
+    spe_mit_delta = (spe_true - results_df$spe_mit_median)*100/spe_true,
+    spe_mit_width = results_df$spe_mit_upper - results_df$spe_mit_lower)
+        
+results_df <- results_df %>% 
+  select(c(article, n, sp, asym_sp, sn, sym_sn, rho_true, psi_true, phi_true, 
+           sen_true, spe_true),
+         everything())
+
+# Round values for reporting
+results_df <- results_df %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+
+results_df$psi_form_median[which(results_df$article=="Carrat et al.")]
+
+results_df$psi_true[which(results_df$article=="Carrat et al.")]
+
+```
+
+# --- 3. Summarize accuracy and interval widths across studies ---
+```{r}
+library(dplyr)
+summary_stats <- results_df %>%
+  summarise(
+    mean_abs_error_rho_form = mean(abs(rho_form_delta), na.rm=TRUE),
+    median_abs_error_rho_form = median(abs(rho_form_delta), na.rm=TRUE),
+    median_width_rho_form = median(rho_form_width, na.rm=TRUE),
+    coverage_rho_form = mean(rho_true >= rho_form_lower & rho_true <= rho_form_upper, na.rm=TRUE),
+    
+    mean_abs_error_psi_form = mean(abs(psi_form_delta), na.rm=TRUE),
+    median_abs_error_psi_form = median(abs(psi_form_delta), na.rm=TRUE),
+    median_width_psi_form = median(psi_form_width, na.rm=TRUE),
+    coverage_psi_form = mean(psi_true >= psi_form_lower & psi_true <= psi_form_upper, na.rm=TRUE),
+    
+    mean_abs_error_sen_form = mean(abs(sen_form_delta), na.rm=TRUE),
+    median_abs_error_sen_form = median(abs(sen_form_delta), na.rm=TRUE),
+    median_width_sen_form = median(sen_form_width, na.rm=TRUE),
+    coverage_sen_form = mean(sen_true >= sen_form_lower & sen_true <= sen_form_upper, na.rm=TRUE),
+    
+    mean_abs_error_spe_form = mean(abs(spe_form_delta), na.rm=TRUE),
+    median_abs_error_spe_form = median(abs(spe_form_delta), na.rm=TRUE),
+    median_width_spe_form = median(spe_form_width, na.rm=TRUE),
+    coverage_spe_form = mean(spe_true >= spe_form_lower & spe_true <= spe_form_upper, na.rm=TRUE),
+    
+    mean_abs_error_rho_mit = mean(abs(rho_mit_delta), na.rm=TRUE),
+    median_abs_error_rho_mit = median(abs(rho_mit_delta), na.rm=TRUE),
+    median_width_rho_mit = median(rho_mit_width, na.rm=TRUE),
+    coverage_rho_mit = mean(rho_true >= rho_mit_lower & rho_true <= rho_mit_upper, na.rm=TRUE),
+    
+    mean_abs_error_psi_mit = mean(abs(psi_mit_delta), na.rm=TRUE),
+    median_abs_error_psi_mit = median(abs(psi_mit_delta), na.rm=TRUE),
+    median_width_psi_mit = median(psi_mit_width, na.rm=TRUE),
+    coverage_psi_mit = mean(psi_true >= psi_mit_lower & psi_true <= psi_mit_upper, na.rm=TRUE),
+    
+    mean_abs_error_phi_mit = mean(abs(phi_mit_delta), na.rm=TRUE),
+    median_abs_error_phi_mit = median(abs(phi_mit_delta), na.rm=TRUE),
+    median_width_phi_mit = median(phi_mit_width, na.rm=TRUE),
+    coverage_phi_mit = mean(phi_true >= phi_mit_lower & phi_true <= phi_mit_upper, na.rm=TRUE),
+    
+    mean_abs_error_sen_mit = mean(abs(sen_mit_delta), na.rm=TRUE),
+    median_abs_error_sen_mit = median(abs(sen_mit_delta), na.rm=TRUE),
+    median_width_sen_mit = median(sen_mit_width, na.rm=TRUE),
+    coverage_sen_mit = mean(sen_true >= sen_mit_lower & sen_true <= sen_mit_upper, na.rm=TRUE),
+    
+    mean_abs_error_spe_mit = mean(abs(spe_mit_delta), na.rm=TRUE),
+    median_abs_error_spe_mit = median(abs(spe_mit_delta), na.rm=TRUE),
+    median_width_spe_mit = median(spe_mit_width, na.rm=TRUE),
+    coverage_spe_mit = mean(spe_true >= spe_mit_lower & spe_true <= spe_mit_upper, na.rm=TRUE),
+    
+    mean_abs_error_rho_manual = mean(abs(rho_manual_delta), na.rm=TRUE),
+    median_abs_error_rho_manual = median(abs(rho_manual_delta), na.rm=TRUE),
+    median_width_rho_manual = median(rho_manual_width, na.rm=TRUE),
+    coverage_rho_manual = mean(rho_true >= rho_manual_lower & rho_true <= rho_manual_upper, na.rm=TRUE),
+    
+    mean_abs_error_psi_manual = mean(abs(psi_manual_delta), na.rm=TRUE),
+    median_abs_error_psi_manual = median(abs(psi_manual_delta), na.rm=TRUE),
+    median_width_psi_manual = median(psi_manual_width, na.rm=TRUE),
+    coverage_psi_manual = mean(psi_true >= psi_manual_lower & psi_true <= psi_manual_upper, na.rm=TRUE),
+    
+    mean_abs_error_phi_manual = mean(abs(phi_manual_delta), na.rm=TRUE),
+    median_abs_error_phi_manual = median(abs(phi_manual_delta), na.rm=TRUE),
+    median_width_phi_manual = median(phi_manual_width, na.rm=TRUE),
+    coverage_phi_manual = mean(phi_true >= phi_manual_lower & phi_true <= phi_manual_upper, na.rm=TRUE)
+  )
+print(summary_stats)
+
+summary_tibble <- tibble(
+  Method = c("Formalism", "MCMC (evolving)", "MCMC (non-evolving)"),
+  mean_abs_error_rho = c(
+    summary_stats$mean_abs_error_rho_form,
+    summary_stats$mean_abs_error_rho_mit,
+    summary_stats$mean_abs_error_rho_manual
+  ),
+  median_abs_error_rho = c(
+    summary_stats$median_abs_error_rho_form,
+    summary_stats$median_abs_error_rho_mit,
+    summary_stats$median_abs_error_rho_manual
+  ),
+  median_width_rho = c(
+    summary_stats$median_width_rho_form,
+    summary_stats$median_width_rho_mit,
+    summary_stats$median_width_rho_manual
+  ),
+  coverage_rho = c(
+    summary_stats$coverage_rho_form,
+    summary_stats$coverage_rho_mit,
+    summary_stats$coverage_rho_manual
+  ),
+  mean_abs_error_psi = c(
+    summary_stats$mean_abs_error_psi_form,
+    summary_stats$mean_abs_error_psi_mit,
+    summary_stats$mean_abs_error_psi_manual
+  ),
+  median_abs_error_psi = c(
+    summary_stats$median_abs_error_psi_form,
+    summary_stats$median_abs_error_psi_mit,
+    summary_stats$median_abs_error_psi_manual
+  ),
+  median_width_psi = c(
+    summary_stats$median_width_psi_form,
+    summary_stats$median_width_psi_mit,
+    summary_stats$median_width_psi_manual
+  ),
+  coverage_psi = c(
+    summary_stats$coverage_psi_form,
+    summary_stats$coverage_psi_mit,
+    summary_stats$coverage_psi_manual
+  ),
+  mean_abs_error_phi = c(
+    NA,
+    summary_stats$mean_abs_error_phi_mit,
+    summary_stats$mean_abs_error_phi_manual
+  ),
+  median_abs_error_phi = c(
+    NA,
+    summary_stats$median_abs_error_phi_mit,
+    summary_stats$median_abs_error_phi_manual
+  ),
+  median_width_phi = c(
+    NA,
+    summary_stats$median_width_phi_mit,
+    summary_stats$median_width_phi_manual
+  ),
+  coverage_phi = c(
+    NA,
+    summary_stats$coverage_phi_mit,
+    summary_stats$coverage_phi_manual
+  ),
+  mean_abs_error_sen = c(summary_stats$mean_abs_error_sen_form, summary_stats$mean_abs_error_sen_mit, NA),
+  median_abs_error_sen = c(summary_stats$median_abs_error_sen_form, summary_stats$median_abs_error_sen_mit, NA),
+  median_width_sen = c(summary_stats$median_width_sen_form, summary_stats$median_width_sen_mit, NA),
+  coverage_sen = c(summary_stats$coverage_sen_form, summary_stats$coverage_sen_mit, NA),
+  mean_abs_error_spe = c(summary_stats$mean_abs_error_spe_form, summary_stats$mean_abs_error_spe_mit, NA),
+  median_abs_error_spe = c(summary_stats$median_abs_error_sen_form, summary_stats$median_abs_error_spe_mit, NA),
+  median_width_spe = c(summary_stats$median_width_sen_form, summary_stats$median_width_spe_mit, NA),
+  coverage_spe = c(summary_stats$coverage_sen_form, summary_stats$coverage_spe_mit, NA)
+  
+)
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results/comparison-with-Mitchell/with_synthetic-data"
+setwd(path_results)
+write.csv(summary_tibble, "psi_error_width_coverage2.csv")
+
+```
+# --- 4. Plot accuracy and interval width comparisons ---
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Prepare data for plotting errors and widths
+plot_data <- results_df %>%
+  select(article,
+         contains("delta"),
+         contains("width")) %>%
+  pivot_longer(
+    -article,
+    names_to = c("parameter", "method", "measure"),
+    names_pattern = "^(rho|psi|phi|sen|spe)_(form|mit|manual)_(median|lower|upper|delta|width)$",
+    values_to = "value"
+  ) %>%
+  mutate(parameter = factor(parameter, levels = c("rho", "psi", "phi", "sen", "spe")),
+         method = factor(method, levels = c("form", "mit", "manual"),
+                         labels = c("Formalism", "Bayesian (evolving)", "Bayesian (non-evolving)")))
+
+# Plot absolute errors (delta)
+ggplot(plot_data %>% filter(measure == "delta"), aes(x=method, y=abs(value), fill=method)) +
+  geom_boxplot() +
+  facet_wrap(~ parameter, scales = "free_y", labeller = labeller(
+    parameter = c(rho = "Error in rho", psi = "Error in psi", phi = "Error in phi",
+                  sen = "Error in sen", spe = "Error in spe"))) +
+  ylab("Absolute Error (%)") +
+  xlab("Method") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 15)) +
+  guides(fill=FALSE)
+
+# Plot interval widths
+ggplot(plot_data %>% filter(measure == "width"), aes(x=method, y=value, fill=method)) +
+  geom_boxplot() +
+  facet_wrap(~ parameter, scales = "free_y", labeller = labeller(
+    parameter = c(rho = "Interval Width for rho", psi = "Interval Width for psi",
+                  phi = "Interval Width for phi", sen = "Interval Width for sen",
+                  spe = "Interval Width for spe"))) +
+  ylab("Interval Width") +
+  xlab("Method") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 15)) +
+  guides(fill=FALSE)
+
+```
+
+## Plots for manuscript
+This includes comparing box plots for absolute errors and interval widths for rho, psi, sen, and spe between formalism and Bayesian (evolving).
+```{r}
+# Absolute errors for rho, psi, sen, and spe
+
+## Creating a function for plotting
+plot_fn <- function(measure_val, param_val) {
+  plot_data %>%
+    filter(measure == measure_val, parameter == param_val, method != "Bayesian (non-evolving)") %>%
+    mutate(method = factor(method,
+                           levels = c("Formalism", "Bayesian (evolving)"),
+                           labels = c("F", "M"))) %>%
+    ggplot(aes(x = method, y = abs(value), fill = method)) +
+    geom_boxplot() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.title = element_blank(),
+      axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.75)
+    ) +
+    guides(fill = FALSE)
+}
+
+plt_error_rho <- plot_fn("delta", "rho")
+plt_error_psi <- plot_fn("delta", "psi")
+plt_error_sen <- plot_fn("delta", "sen")
+plt_error_spe <- plot_fn("delta", "spe")
+
+# Interval widths for rho, psi, sen, and spe
+plt_width_rho <- plot_fn("width", "rho")
+plt_width_psi <- plot_fn("width", "psi")
+plt_width_sen <- plot_fn("width", "sen")
+plt_width_spe <- plot_fn("width", "spe")
+
+
+```
+
+
+Compare estimates of measures with all the parameters given by formalism and Bayesian (evolving)
+```{r}
+# rho
+## mean error
+print("Results for rho")
+error_diff_rho <- results_df$rho_mit_delta - results_df$rho_form_delta
+summary(error_diff_rho)
+error_wilcox_rho <- wilcox.test(results_df$rho_mit_delta, results_df$rho_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_rho)
+
+### Cohen's d
+error_cohen_rho <- cohen.d(results_df$rho_mit_delta, results_df$rho_form_delta, paired = TRUE)
+print(error_cohen_rho)
+
+# psi
+## mean error
+print("Results for psi")
+error_diff_psi <- results_df$psi_mit_delta - results_df$psi_form_delta
+summary(error_diff_psi)
+error_wilcox_psi <- wilcox.test(results_df$psi_mit_delta, results_df$psi_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_psi)
+
+### Cohen's d
+error_cohen_psi <- cohen.d(results_df$psi_mit_delta, results_df$psi_form_delta, paired = TRUE)
+print(error_cohen_psi)
+
+# sen
+print("Results for sen")
+error_diff_sen <- results_df$sen_mit_delta - results_df$sen_form_delta
+summary(error_diff_sen)
+error_wilcox_sen <- wilcox.test(results_df$sen_mit_delta, results_df$sen_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_sen)
+
+## Cohen's d
+error_cohen_sen <- cohen.d(results_df$sen_mit_delta, results_df$sen_form_delta, paired = TRUE)
+print(error_cohen_sen)
+
+# spe
+print("Results for spe")
+error_diff_spe <- results_df$spe_mit_delta - results_df$spe_form_delta
+summary(error_diff_spe)
+error_wilcox_spe <- wilcox.test(results_df$spe_mit_delta, results_df$spe_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_spe)
+
+## Cohen's d
+error_cohen_spe <- cohen.d(results_df$spe_mit_delta, results_df$spe_form_delta, paired = TRUE)
+print(error_cohen_spe)
+```
+```{r}
+# rho
+## mean width
+
+width_diff_rho <- results_df$rho_mit_width - results_df$rho_form_width
+width_wilcox_rho <- wilcox.test(results_df$rho_mit_width, results_df$rho_form_width, paired = TRUE, alternative = "greater")
+print(cat("Results for rho \n"))
+print(width_wilcox_rho)
+
+### Cohen's d
+width_cohen_rho <- cohen.d(results_df$rho_mit_width, results_df$rho_form_width, paired = TRUE)
+print(width_cohen_rho)
+
+# psi
+width_diff_psi <- results_df$psi_mit_width - results_df$psi_form_width
+width_wilcox_psi <- wilcox.test(results_df$psi_mit_width, results_df$psi_form_width, paired = TRUE, alternative = "greater")
+print(cat("Results for psi \n"))
+print(width_wilcox_psi)
+
+### Cohen's d
+width_cohen_psi <- cohen.d(results_df$psi_mit_width, results_df$psi_form_width, paired = TRUE)
+print(width_cohen_psi)
+
+# sen
+width_diff_sen <- results_df$sen_mit_width - results_df$sen_form_width
+width_wilcox_sen <- wilcox.test(results_df$sen_mit_width, results_df$sen_form_width, paired = TRUE, alternative = "greater")
+print(cat("Results for sen \n"))
+print(width_wilcox_sen)
+
+## Cohen's d
+width_cohen_sen <- cohen.d(results_df$sen_mit_width, results_df$sen_form_width, paired = TRUE)
+print(width_cohen_sen)
+
+# spe
+width_diff_spe <- results_df$spe_mit_width - results_df$spe_form_width
+width_wilcox_spe <- wilcox.test(results_df$spe_form_width, results_df$spe_mit_width, paired = TRUE, alternative = "greater")
+print(cat("Results for spe \n"))
+print(width_wilcox_spe)
+
+## Cohen's d
+width_cohen_spe <- cohen.d(results_df$spe_mit_width, results_df$spe_form_width, paired = TRUE)
+print(width_cohen_spe)
+```
+Performing one-sided paired t-test for rho, psi, sen, and spe with formalism and Bayesian (evolving) for absolute error and interval width
+```{r}
+# rho
+## mean error
+print("Results for rho")
+error_wilcox_rho <- wilcox.test(results_df$rho_mit_delta, results_df$rho_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_rho)
+
+### Cohen's d
+error_cohen_rho <- cohen.d(results_df$rho_mit_delta, results_df$rho_form_delta, paired = TRUE)
+print(error_cohen_rho)
+
+# psi
+## mean error
+print("Results for psi")
+error_diff_psi <- results_df$psi_mit_delta - results_df$psi_form_delta
+summary(error_diff_psi)
+error_wilcox_psi <- wilcox.test(results_df$psi_mit_delta, results_df$psi_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_psi)
+
+### Cohen's d
+error_cohen_psi <- cohen.d(results_df$psi_mit_delta, results_df$psi_form_delta, paired = TRUE)
+print(error_cohen_psi)
+
+# sen
+print("Results for sen")
+error_diff_sen <- results_df$sen_mit_delta - results_df$sen_form_delta
+summary(error_diff_sen)
+error_wilcox_sen <- wilcox.test(results_df$sen_mit_delta, results_df$sen_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_sen)
+
+## Cohen's d
+error_cohen_sen <- cohen.d(results_df$sen_mit_delta, results_df$sen_form_delta, paired = TRUE)
+print(error_cohen_sen)
+
+# spe
+print("Results for spe")
+error_diff_spe <- results_df$spe_mit_delta - results_df$spe_form_delta
+summary(error_diff_spe)
+error_wilcox_spe <- wilcox.test(results_df$spe_mit_delta, results_df$spe_form_delta, paired = TRUE, alternative = "greater")
+print(error_wilcox_spe)
+
+## Cohen's d
+error_cohen_spe <- cohen.d(results_df$spe_mit_delta, results_df$spe_form_delta, paired = TRUE)
+print(error_cohen_spe)
+
+```
+
+# Performing one-sided paired t-test for rho, psi, sen, and spe with formalism and Bayesian (evolving) for absolute error and interval width
+
+## Checking normality of differences
+```{r}
+## Errors (deltas)
+shapiro.test(error_diff_rho)
+shapiro.test(error_diff_psi)
+shapiro.test(error_diff_sen)
+shapiro.test(error_diff_spe)
+
+## Widths
+shapiro.test(width_diff_rho)
+shapiro.test(width_diff_psi)
+shapiro.test(width_diff_sen)
+shapiro.test(width_diff_spe)
+```
+t-tests for interval widths
+```{r}
+# rho
+## mean width
+print("Results for rho")
+width_t_rho <- t.test(results_df$rho_mit_width, results_df$rho_form_width, paired = TRUE, alternative = "greater")
+print(width_t_rho)
+
+# psi
+## mean width
+print("Results for psi")
+width_t_psi <- t.test(results_df$psi_mit_width, results_df$psi_form_width, paired = TRUE, alternative = "greater")
+print(width_t_psi)
+
+# sen
+print("Results for sen")
+width_t_sen <- t.test(results_df$sen_mit_width, results_df$sen_form_width, paired = TRUE, alternative = "greater")
+print(width_t_sen)
+
+# spe
+print("Results for spe")
+width_t_spe <- t.test(results_df$spe_mit_width, results_df$spe_form_width, paired = TRUE, alternative = "greater")
+print(width_t_spe)
+```
+
+
+
+## Plot distributions of differences
+```{r}
+library(ggplot2)
+plot_diff <- function(diff_data, title) {
+  ggplot(data.frame(Difference = diff_data), aes(x = Difference)) +
+    geom_histogram(binwidth = 0.01, fill = "lightblue", color = "black") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+    labs(title = title, x = "Difference", y = "Frequency") +
+    theme_minimal()
+}
+# plot_diff(error_diff_rho, "Difference in Absolute Errors for rho (M - F)")
+# plot_diff(error_diff_psi, "Difference in Absolute Errors for psi (M - F)")
+# plot_diff(error_diff_sen, "Difference in Absolute Errors for sen (M - F)")
+# plot_diff(error_diff_spe, "Difference in Absolute Errors for spe (M - F)")
+plot_diff(width_diff_rho, "Difference in Interval Widths for rho (M - F)")
+plot_diff(width_diff_psi, "Difference in Interval Widths for psi (M - F)")
+plot_diff(width_diff_sen, "Difference in Interval Widths for sen (M - F)")
+plot_diff(width_diff_spe, "Difference in Interval Widths for spe (M - F)")
+
+```
+
+
+# --- 5. Visualize coverage probabilities ---
+
+```{r}
+methods <- c("Formalism", "Bayesian (evolving)", "Bayesian (non-evolving)")
+parameters <- c("rho", "psi", "phi", "sen", "spe")
+
+# Make a grid of all combinations
+library(tidyr)
+coverage_data <- expand.grid(
+  Method = methods,
+  Parameter = parameters,
+  stringsAsFactors = FALSE
+)
+
+# Compute the individual coverage statistics
+coverage_data$Coverage <- NA_real_
+
+# Now assign them by [Method,Parameter] pairs
+# Formalism
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "rho"] <-
+  mean(results_df$rho_true >= results_df$rho_form_lower & results_df$rho_true <= results_df$rho_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "psi"] <-
+  mean(results_df$psi_true >= results_df$psi_form_lower & results_df$psi_true <= results_df$psi_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "phi"] <-
+  mean(results_df$phi_true >= results_df$phi_form_lower & results_df$phi_true <= results_df$phi_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "sen"] <-
+  mean(results_df$sen_true >= results_df$sen_form_lower & results_df$sen_true <= results_df$sen_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "spe"] <-
+  mean(results_df$spe_true >= results_df$spe_form_lower & results_df$spe_true <= results_df$spe_form_upper, na.rm = TRUE)
+# Bayesian (evolving)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "rho"] <-
+  mean(results_df$rho_true >= results_df$rho_mit_lower & results_df$rho_true <= results_df$rho_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "psi"] <-
+  mean(results_df$psi_true >= results_df$psi_mit_lower & results_df$psi_true <= results_df$psi_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "phi"] <-
+  mean(results_df$phi_true >= results_df$phi_mit_lower & results_df$phi_true <= results_df$phi_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "sen"] <-
+  mean(results_df$sen_true >= results_df$sen_mit_lower & results_df$sen_true <= results_df$sen_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "spe"] <-
+  mean(results_df$spe_true >= results_df$spe_mit_lower & results_df$spe_true <= results_df$spe_mit_upper, na.rm = TRUE)
+# Bayesian (non-evolving)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (non-evolving)" & coverage_data$Parameter == "rho"] <-
+  mean(results_df$rho_true >= results_df$rho_manual_lower & results_df$rho_true <= results_df$rho_manual_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (non-evolving)" & coverage_data$Parameter == "psi"] <-
+  mean(results_df$psi_true >= results_df$psi_manual_lower & results_df$psi_true <= results_df$psi_manual_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (non-evolving)" & coverage_data$Parameter == "phi"] <-
+  mean(results_df$phi_true >= results_df$phi_manual_lower & results_df$phi_true <= results_df$phi_manual_upper, na.rm = TRUE)
+
+coverage_data$Method <- factor(
+  coverage_data$Method,
+  levels = c("Formalism", "Bayesian (evolving)", "Bayesian (non-evolving)")
+)
+
+# (No sen/spe for formalism or Bayesian-non-evolving: NA is left)
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(coverage_data, aes(x = Method, y = Coverage, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.65, na.rm = TRUE) +
+  facet_wrap(~ Parameter, scales = "free_y") +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(x = "Method", y = "Coverage Probability", title = "Coverage Probability by Method and Parameter") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 15)) +
+  guides(fill = guide_legend(title = "Method"))
+
+```
+
+## Plots for manuscript
+```{r}
+methods <- c("Formalism", "Bayesian (evolving)")
+parameters <- c("rho", "psi", "sen", "spe")
+
+# Make a grid of all combinations
+library(tidyr)
+coverage_data <- expand.grid(
+  Method = methods,
+  Parameter = parameters,
+  stringsAsFactors = FALSE
+)
+
+# Compute the individual coverage statistics
+coverage_data$Coverage <- NA_real_
+
+# Now assign them by [Method,Parameter] pairs
+# Formalism
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "rho"] <-
+  mean(results_df$rho_true >= results_df$rho_form_lower & results_df$rho_true <= results_df$rho_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "psi"] <-
+  mean(results_df$psi_true >= results_df$psi_form_lower & results_df$psi_true <= results_df$psi_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "sen"] <-
+  mean(results_df$sen_true >= results_df$sen_form_lower & results_df$sen_true <= results_df$sen_form_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "spe"] <-
+  mean(results_df$spe_true >= results_df$spe_form_lower & results_df$spe_true <= results_df$spe_form_upper, na.rm = TRUE)
+# Bayesian (evolving)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "rho"] <-
+  mean(results_df$rho_true >= results_df$rho_mit_lower & results_df$rho_true <= results_df$rho_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "psi"] <-
+  mean(results_df$psi_true >= results_df$psi_mit_lower & results_df$psi_true <= results_df$psi_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "sen"] <-
+  mean(results_df$sen_true >= results_df$sen_mit_lower & results_df$sen_true <= results_df$sen_mit_upper, na.rm = TRUE)
+coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "spe"] <-
+  mean(results_df$spe_true >= results_df$spe_mit_lower & results_df$spe_true <= results_df$spe_mit_upper, na.rm = TRUE)
+
+coverage_data$Method <- factor(
+  coverage_data$Method,
+  levels = c("Formalism", "Bayesian (evolving)")
+)
+
+# (No sen/spe for formalism or Bayesian-non-evolving: NA is left)
+
+```
+
+```{r}
+# Fill box plots of formalism and Bayesian (evolving) with the following colour: "#f9766c" and "#01bfc5", respectively
+library(ggplot2)
+ggplot2::scale_fill_manual(values = c("#f9766c", "#01bfc5"))
+# Function to plot coverage probabilities
+cov_fun <- function(param_val) {
+  coverage_data %>% 
+    filter(Parameter == param_val) %>%
+    ggplot(aes(x = Method, y = Coverage, fill = Method)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.65, na.rm = TRUE) +
+    # Add a dashed line at y = 0.95
+    geom_hline(yintercept = 0.95, linetype = "dashed", color = "darkgreen") +
+    scale_y_continuous(limits = c(0, 1)) +
+    scale_fill_manual(values = c("#f9766c", "#01bfc5")) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.title = element_blank(),
+      axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.75)
+    ) +
+    guides(fill = FALSE)
+}
+
+plot_cov_rho <- cov_fun("rho")
+plot_cov_psi <- cov_fun("psi")
+plot_cov_sen <- cov_fun("sen")
+plot_cov_spe <- cov_fun("spe")
+
+```
+
+## Table for manuscript
+The table will have the following columns: "Measure", "rho", "psi", "sen", and "spe". In the first columns, I will have Mean of estimates using formalims, mean of estimates using Byaesian (evolving), then mean of absolute error using formalism, mean of absolute error using Bayesian (evolving), mean of interval width using formalism, mean of interval width using Bayesian (evolving), coverage probability using formalism, and coverage probability using Bayesian (evolving), P-value of absolute error (Wilcox test), and Cohen's d of absolute error, P-value of interval width (Wilcox test), and Cohen's d of interval width.
+```{r}
+table_est <- tibble(
+Measure = c("Median Absolute Error (Formalism)", "Median Absolute Error (Bayesian)", 
+            "Median Interval Width (Formalism)", "Median Interval Width (Bayesian)",
+            "Coverage Probability (Formalism)", "Coverage Probability (Bayesian)",
+            "P-value (Error)", "Cohen's d (Error)", 
+            "P-value (Width)", "Cohen's d (Width)"),
+rho = c(summary_tibble$median_abs_error_rho[1], summary_tibble$median_abs_error_rho[2],
+        summary_tibble$median_width_rho[1], summary_tibble$median_width_rho[2],
+        coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "rho"],
+        coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "rho"],
+        error_wilcox_rho$p.value, error_cohen_rho$estimate,
+        width_wilcox_rho$p.value, width_cohen_rho$estimate),
+psi = c(summary_tibble$median_abs_error_psi[1], summary_tibble$median_abs_error_psi[2],
+        summary_tibble$median_width_psi[1], summary_tibble$median_width_psi[2],
+        coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "psi"],
+        coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "psi"],
+        error_wilcox_psi$p.value, error_cohen_psi$estimate,
+        width_wilcox_psi$p.value, width_cohen_psi$estimate),
+sen = c(summary_tibble$median_abs_error_sen[1], summary_tibble$median_abs_error_sen[2],
+        summary_tibble$median_width_sen[1], summary_tibble$median_width_sen[2],
+        coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "sen"],
+        coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "sen"],
+        error_wilcox_sen$p.value, error_cohen_sen$estimate,
+        width_wilcox_sen$p.value, width_cohen_sen$estimate),
+spe = c(summary_tibble$median_abs_error_spe[1], summary_tibble$median_abs_error_spe[2],
+        summary_tibble$median_width_spe[1], summary_tibble$median_width_spe[2],
+        coverage_data$Coverage[coverage_data$Method == "Formalism" & coverage_data$Parameter == "spe"],
+        coverage_data$Coverage[coverage_data$Method == "Bayesian (evolving)" & coverage_data$Parameter == "spe"],
+        error_wilcox_spe$p.value, error_cohen_spe$estimate,
+        width_wilcox_spe$p.value, width_cohen_spe$estimate)
+)
+
+print(table_est)
+
+# Round off table_est by 3 decimal places
+table_est <- table_est %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+# Export table_est as .csv file
+results_path <- "~/ubuntu_research/Research/adjusted_psi/results/comparison-with-Mitchell/with_synthetic-data"
+setwd(results_path)
+write.csv(table_est, "coverage_table2.csv", row.names = FALSE)
+```
+
+Plotting delta, interval width, and coverage probability of psi just for formalism
+```{r}
+# Box plot of delta with formalism 
+ggplot(results_df, aes(x = "", y = abs(psi_form_delta), fill = "Formalism")) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal() +
+  theme(
+      axis.text = element_blank(),
+      axis.title = element_blank(),
+      axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.75),
+      legend.position = "none"
+    ) +
+  scale_fill_manual(values = c("Formalism" = "#f9766c"))
+
+# Box plot of interval width with formalism
+ggplot(results_df, aes(x = "", y = psi_form_width, fill = "Formalism")) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal() +
+  theme(
+      # axis.text = element_blank(),
+      axis.title = element_blank(),
+      axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.75),
+      legend.position = "none"
+    ) +
+  scale_fill_manual(values = c("Formalism" = "#01bfc5"))
+
+# Bar plot of coverage probability with formalism
+coverage_psi_form <- mean(results_df$psi_true >= results_df$psi_form_lower & results_df$psi_true <= results_df$psi_form_upper, na.rm = TRUE)
+coverage_df <- data.frame(
+  Method = "Formalism",
+  Coverage = coverage_psi_form
+)
+ggplot(coverage_df, aes(x = Method, y = Coverage, fill = Method)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_y_continuous(limits = c(0, 1)) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", color = "darkgreen", linewidth = 1) +
+  theme_minimal() +
+  theme(
+      # axis.text = element_blank(),
+      axis.title = element_blank(),
+      axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.75),
+      legend.position = "none"
+    ) +
+  scale_fill_manual(values = c("Formalism" = "orange"))
+```
+
+# --- 6. Finding parameters that dictate the outperformance of formalism over Mitchell et al. ---
+
+This we will do by checking dependence of 'delta' and 'width' parameters on the measurable quantities like 'rho', 'psi', 'phi', and so on
+
+```{r}
+# Creating datasets only for relevant parameters
+cor_df <- subset(
+  results_df, 
+  select = c(n, sp, asym_sp, sn, sym_sn, rho_true, psi_true, phi_true, sen_true, spe_true,
+            rho_form_delta, psi_form_delta,
+            rho_mit_delta, psi_mit_delta, phi_mit_delta, sen_mit_delta, spe_mit_delta,
+            rho_manual_delta, psi_manual_delta, phi_manual_delta,
+            rho_form_width, psi_form_width,
+            rho_mit_width, psi_mit_width, phi_mit_width, sen_mit_width, spe_mit_width,
+            rho_manual_width, psi_manual_width, phi_manual_width)) %>% 
+  mutate(
+    sen_true_width = df$alpha_u - df$alpha_l,
+    spe_true_width = df$beta_u - df$beta_l
+  )
+
+# Check correlations in different parameters
+cor_results <- round(cor(cor_df, use = "pairwise.complete.obs"), 3)
+# Display the correlation matrix
+print(cor_results)
+
+# Generating scatter plots of 'delta' and 'width' parameters against 'n', 'sp', 'asym_sp', 'sn', 'sym_sn", 'rho', 'psi', 'phi', 'sen', and 'spe'
+
+## Batch plotting for multiple parameter combinations
+my_deltas <- c("rho_form_delta", "psi_form_delta", "rho_mit_delta", "psi_mit_delta", "phi_mit_delta", 
+               "sen_mit_delta", "spe_mit_delta", "rho_manual_delta", "psi_manual_delta", "phi_manual_delta")
+my_xaxis <- c("n", "sp", "asym_sp", "sn", "sym_sn", "rho_true", "psi_true", "phi_true", "sen_true", "spe_true",
+              "sen_true_width", "spe_true_width")
+
+### Diaplaying goodness of fit (R^2) for the linear regression lines
+for (x in my_xaxis) {
+  for (y in my_deltas) {
+    form <- as.formula(paste(y, "~", x))
+    lm_fit <- lm(form, data = cor_df)
+    r2 <- summary(lm_fit)$r.squared
+    r2_text <- paste("R² =", round(r2, 3))
+    
+    p <- ggplot(cor_df, aes_string(x = x, y = y)) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color = "blue") +
+      labs(title = paste("Scatter plot of", y, "vs", x),
+           x = x,
+           y = y) +
+      theme_minimal() +
+      annotate("text", x = Inf, y = Inf, label = r2_text, hjust = 1.1, 
+               vjust = 1.5, size = 5, color = "red")
+    
+    print(p)
+  }
+}
+
+```
+

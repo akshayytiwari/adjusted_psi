@@ -1,0 +1,19 @@
+rm(list = ls())
+library(tidyverse)
+library(here)
+source(here("scripts/10_generation_psi_zero_phi.R"))
+source(here("scripts/11_monte_carlo_no_phi.R"))
+source(here("scripts/13_time_varying_sensitivity2.R"))
+source(here("scripts/14_plot_time_varying_psi.R"))
+
+
+# Data extraction and modification
+
+df <- read.csv(here("data/data_main.csv"))
+df1 <- read.csv(here("data/pcr_sens_time_v2.csv"))
+
+results_df <- simulate_time_varying_psi(
+  df1, n = 1000, n_iter = 1000, synthetic_fun = synthetic_zero_phi,
+  formalism_fun = monte_carlo_no_phi
+)
+

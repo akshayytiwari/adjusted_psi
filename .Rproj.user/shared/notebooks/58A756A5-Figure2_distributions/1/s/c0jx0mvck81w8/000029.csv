@@ -1,0 +1,4 @@
+"0","# Heatmap"
+"0","symptom_csv <- here(""data/symptom_matrix.csv"")"
+"0","p_symptom_matrix <- plot_symptom_matrix(symptom_csv)"
+"0","p_symptom_matrix"

@@ -1,0 +1,76 @@
+---
+title: "Synthetic data generation for φ_c = 0 (PCR case)"
+author: "Akshay Tiwari et al."
+output:
+  html_document:
+    toc: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(here)
+source(here("scripts/10_generation_psi_zero_phi.R"))
+source(here("scripts/11_monte_carlo_no_phi.R"))
+source(here("scripts/13_time_varying_sensitivity2.R"))
+source(here("scripts/14_plot_time_varying_psi.R"))
+```
+
+# Data extraction and modification
+```{r}
+df <- read.csv(here("data/data_main.csv"))
+df1 <- read.csv(here("data/pcr_sens_time_v2.csv"))
+```
+
+```{r}
+results_df <- simulate_time_varying_psi(
+  df1, n = 100000, n_iter = 100000, synthetic_fun = synthetic_zero_phi,
+  formalism_fun = monte_carlo_no_phi
+)
+```
+
+```{r}
+results_df <- simulate_time_varying_psi(
+  df1,
+  n = 1e5,
+  n_iter_mc = 1e5,
+  synthetic_fun = synthetic_zero_phi,
+  formalism_fun = monte_carlo_no_phi
+)
+
+```
+
+
+## Plotting psi at different day_inf
+
+```{r}
+# factor day_inf
+results_df$day_inf <- factor(df1$day_inf, levels = df1$day_inf)
+
+plt2 <- ggplot(results_df) +
+  geom_errorbar(aes(day_inf, ymin = psi_delta_lower, ymax = psi_delta_upper), 
+                width = 0.1, size = 0.5, alpha = 0.8, colour = "black") +
+  
+  geom_point(aes(x = day_inf, y = psi_delta_median), 
+             shape = 21, fill = "lightblue", size = 3) + 
+  # scale_y_continuous(breaks = seq(0, 15, by = 5), limits = c(0, 16), 
+  #                    expand = c(0, 0)) +
+  theme_classic() + 
+  theme(text = element_text(family = "Helvetica"),
+        axis.text.y = element_text(size =  11, colour = "black"),
+        axis.text.x = element_text(size =  11, colour = "black"),
+        # axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = 0.6, colour = "black"),
+        axis.ticks.length = unit(0.25, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = 0.6),
+        legend.position = "none")
+plt2
+```
+
+
+
+
+
+

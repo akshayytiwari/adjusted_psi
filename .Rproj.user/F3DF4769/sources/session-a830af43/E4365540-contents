@@ -1,0 +1,135 @@
+---
+title: "Validation of corrected ψ estimates against PCR-based studies (Table 3)"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+source(here("scripts/12_beta_dis.R"))   # estimate_beta()
+source(here("scripts/01_formalism.R"))
+```
+
+# Data extraction
+```{r}
+df_ab  <- read_csv(here("data/validation_ab_data.csv"))
+df_pcr <- read_csv(here("data/validation_pcr_data.csv"))
+```
+
+# Assign test-performance assumptions
+Friedman et al. performed both PCR and Ab tests;
+Menachemi et al. only PCR;
+Sullivan et al. and Pathela et al. only Ab.
+```{r}
+# Literature-based ranges for Ab test accuracy
+sen_l <- 0.81; sen_u <- 0.91; sen_mean <- 0.87
+spe_l <- 0.96; spe_u <- 1.00; spe_mean <- 1.00
+
+# Widen sensitivity interval ±0.09 to reflect inter-kit variability
+
+sen_l <- sen_l - 0.09
+sen_u <- sen_u + 0.09
+
+# Assign to PCR dataset (first three entries = PCR studies)
+
+df_pcr <- df_pcr %>%
+mutate(
+alpha_l = sen_l,
+alpha   = sen_mean,
+alpha_u = sen_u,
+beta_l  = spe_l,
+beta    = spe_mean,
+beta_u  = spe_u
+)
+
+```
+
+# Estimate Beta-distribution parameters for sensitivity/specificity
+```{r}
+estimate_ab_params <- function(df) {
+alpha_beta <- map_dfr(seq_len(nrow(df)), ~ {
+tibble(
+alpha_a = estimate_beta(c(df$alpha_l[.x], df$alpha[.x], df$alpha_u[.x]))$sen,
+alpha_b = estimate_beta(c(df$alpha_l[.x], df$alpha[.x], df$alpha_u[.x]))$spe
+)
+})
+
+beta_beta <- map_dfr(seq_len(nrow(df)), ~ {
+tibble(
+beta_a = estimate_beta(c(df$beta_l[.x], df$beta[.x], df$beta_u[.x]))$sen,
+beta_b = estimate_beta(c(df$beta_l[.x], df$beta[.x], df$beta_u[.x]))$spe
+)
+})
+
+bind_cols(df, alpha_beta, beta_beta)
+}
+
+df_ab  <- estimate_ab_params(df_ab)
+df_pcr <- estimate_ab_params(df_pcr)
+
+```
+
+# Monte Carlo estimation of psi
+```{r}
+psi_mc <- function(data, n_iter = 1e5, assume_phi_zero = FALSE) {
+n_rows <- nrow(data)
+
+map_dfr(seq_len(n_rows), function(i) {
+d <- data[i, ]
+
+alpha <- rbeta(n_iter, d$alpha_a, d$alpha_b)
+beta  <- rbeta(n_iter, d$beta_a,  d$beta_b)
+rho_c <- rbinom(n_iter, d$n,  d$rho_c) / d$n
+psi_c <- rbinom(n_iter, d$sp, d$psi_c) / d$sp
+
+if (assume_phi_zero) {
+  # φ = 0 case (no alternate symptoms)
+  rho <- (rho_c + beta - 1) / (alpha + beta - 1)
+  psi <- 1 - rho_c * (1 - psi_c) / (alpha * rho)
+  psi[is.na(psi) | (psi < 0) | (psi > 1)] <- NA
+} else {
+  # General φ ≠ 0 case
+  phi_c <- rbinom(n_iter, d$sn, d$phi_c) / d$sn
+  psi <- correction(rho_c, psi_c, phi_c, alpha, beta)
+}
+
+tibble(
+  study = d$study,
+  psi_l      = quantile(psi, 0.25, na.rm = TRUE),
+  psi_median = quantile(psi, 0.50, na.rm = TRUE),
+  psi_u      = quantile(psi, 0.75, na.rm = TRUE)
+)
+
+})
+}
+
+```
+
+# Apply Monte Carlo simulation
+```{r}
+# Antibody-based studies
+
+df_ab_psi  <- psi_mc(df_ab,  n_iter = 1e5)
+df_ab      <- bind_cols(df_ab,  df_ab_psi %>% select(-study))
+
+# PCR-based studies
+
+df_pcr_psi <- psi_mc(df_pcr, n_iter = 1e5)
+df_pcr     <- bind_cols(df_pcr, df_pcr_psi %>% select(-study))
+
+# Special case: Menachemi et al. (assume φ≈0)
+
+df_pcr[3, c("psi_l","psi_median","psi_u")] <-
+psi_mc(df_pcr[3, ], n_iter = 1e5, assume_phi_zero = TRUE)[, c("psi_l","psi_median","psi_u")]
+
+```
+
+
+
+
+

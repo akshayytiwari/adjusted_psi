@@ -1,0 +1,26 @@
+{
+    "id": "7AF9EBE0",
+    "path": "~/ubuntu_research/Research/adjusted_psi/asymptomatic_prevalence/scripts/15_weakly_informative_prior.R",
+    "project_path": "scripts/15_weakly_informative_prior.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1762167598587.0,
+    "source_on_save": false,
+    "relative_order": 13,
+    "properties": {
+        "source_window_id": "wyfk3bqw8b5sj",
+        "Source": "Source",
+        "cursorPosition": "11,1",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1762169003,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1762169003642,
+    "read_only": false,
+    "read_only_alternatives": []
+}

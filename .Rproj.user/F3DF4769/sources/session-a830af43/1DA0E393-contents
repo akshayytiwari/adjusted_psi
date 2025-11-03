@@ -1,0 +1,872 @@
+---
+title: "Accurate estimation of the prevalence of asymptomatic SARS-CoV-2 infections
+  from population-based surveys"
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+gc()
+
+suppressPackageStartupMessages({
+  library(tidyverse) 
+  library(gridExtra)  # Arrange multiple ggplots
+  library(reshape2)   
+  library(ggrepel)    # Prevent text overlap in plots
+  library(readr)
+})
+```
+
+Dimension for plotting figures
+```{r}
+s_text <- 15
+s_title <- 12
+s_point <- 5
+s_scatter <- 3
+width_tick <- 0.6
+length_tick <- 0.25  # in cm
+width_border <- 0.6
+
+```
+
+Paths
+```{r}
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/final_codes"
+path_data <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results"
+
+```
+
+
+Importing different function files
+```{r}
+setwd(path_code)
+source('formalism.R')
+source('monte_carlo.R')
+```
+
+# Loading data
+```{r, warning=FALSE, echo=FALSE}
+setwd(path_data)
+df = read.csv('./data_v8.csv', header = TRUE)
+```
+
+
+Note: The variables in the following calculations are defined as in the main text.
+
+# Exploring data of serosurvey
+## Violin plots of rho_c (Figure S1) and phi_c (Figure 1a)
+
+```{r}
+# Define styling parameters
+s_border <- 0.75
+s_point <- 3
+
+# Convert data to long format for violin plot
+df_long <- melt(df, measure.vars = c("rho_c", "phi_c"))
+
+# Function to create violin plots
+plot_violin <- function(data, var_name, fill_color) {
+  ggplot(data %>% filter(variable == var_name), aes(x = variable, y = value)) +
+    geom_violin(trim = TRUE, scale = "width",
+                width = 1, size = 1, alpha = 0.3, fill = fill_color) +
+    geom_boxplot(width = 0.5, color = "black", outlier.shape = NA, 
+                 alpha = 0.5, fill = fill_color, size = 1, fatten = 1.25) +
+    geom_jitter(shape = 21, width = 0.5, size = s_scatter, fill = fill_color,
+                color = "black", alpha = 1) +
+    labs(y = expression(Phi[c])) +
+    theme_minimal() +
+    theme(text = element_text(family = "Helvetica"),
+          axis.text.x = element_blank(),
+          axis.title = element_blank(),
+          axis.text.y = element_text(size = s_text, colour = "black"),
+          axis.ticks.y = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.x = element_blank(),
+          axis.ticks.length.y = unit(length_tick, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+}
+
+# Plot violin for rho_c
+plot_violin(df_long, "rho_c", "olivedrab3")
+
+# Plot violin for phi_c
+plot_violin(df_long, "phi_c", "orchid3")
+
+# Print medians of rho_c and phi_c
+cat("Median of rho_c:", median(df$rho_c), "\n")
+cat("Median of phi_c:", median(df$phi_c), "\n")
+
+```
+
+# Finding the whiskers of the box plots of rho_c and phi_c
+```{r}
+# Box statistics
+
+box_fn <- function(variable) {
+  box_df <- df %>%
+    summarise(
+      Q1 = quantile({{variable}}, 0.25),
+      Median = quantile({{variable}}, 0.5),
+      Q3 = quantile({{variable}}, 0.75),
+      Lower_whisker = min({{variable}}[{{variable}} > (Q1 - 1.5*(Q3-Q1))]),
+      Upper_whisker = max({{variable}}[{{variable}} < (Q3 + 1.5*(Q3-Q1))]),
+      min_val = min({{variable}}),
+      max_val = max({{variable}})
+    )
+  return(box_df)
+}
+
+box_rho_c <- box_fn(df$rho_c)
+box_phi_c <- box_fn(df$phi_c)
+box_psi_c <- box_fn(df$psi_c)
+box_psi <- box_fn(df$psi)
+```
+
+## Geographical scope
+```{r}
+path_data2 <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path_data2)
+df2 <- read.csv("data_v7_filled.csv", header = TRUE)
+colnames(df2)
+table(df2$scope_of_estimate)
+```
+
+
+# Estimates of the prevalence of asymptomatic infections
+## Computing corrected prevalence, psi, and percentage increase in the prevalence, eta
+
+```{r}
+# Compute psi using Equation (1) from the main text
+df$psi_form <- with(df, correction(rho_c, psi_c, phi_c, alpha, beta))
+
+```
+
+## Calculation of eta
+```{r}
+# eta
+df$eta_form <- 100*(df$psi_form - df$psi_c)/df$psi_c
+summary(df$eta_form)
+
+```
+
+
+## Estimating uncertainty intervals of psi using Monte Carlo simulation
+```{r}
+for (i in 1:nrow(df)) {
+  out_mc <- monte_carlo(df$n[i], df$sp[i], df$sn[i], 100000, 
+                        df$rho_c[i], df$psi_c[i], df$phi_c[i], 
+                        df$alpha_a[i], df$alpha_b[i], 
+                        df$beta_a[i], df$beta_b[i])
+  print(paste("i =", i, "out_mc:", out_mc))
+  
+  # out_mc will be a list with three elements: rho_mc, psi_mc, and eta_mc
+  df$rho_l[i] <- out_mc$rho[1]
+  df$rho[i] <- out_mc$rho[2]
+  df$rho_u[i] <- out_mc$rho[3]
+  
+  df$psi_l[i] <- out_mc$psi[1]
+  df$psi[i] <- out_mc$psi[2]
+  df$psi_u[i] <- out_mc$psi[3]
+  
+  df$eta_l[i] <- out_mc$eta[1]
+  df$eta[i] <- out_mc$eta[2]
+  df$eta_u[i] <- out_mc$eta[3]
+
+}
+
+```
+
+```{r}
+# Exportng the results of psi
+# path_results <- "~/ubuntu_research/Research/adjusted_psi/results"
+# setwd(path_results)
+# write.csv(df, file = "adjusted_psi_results.csv", row.names = FALSE)
+```
+
+
+## Exporting median values and their uncertainties of psi and eta to a csv file
+```{r}
+df_out <- df %>% 
+  select(country, article, psi_form, psi, psi_l, psi_u, 
+         eta_form, eta, eta_l, eta_u)
+
+# round off psi-related values to two decimal places and eta-related values to zero decimal places
+df_out <- df_out %>% 
+  mutate(across(c(psi_form, psi, psi_l, psi_u), ~ round(., 2))) %>% 
+  mutate(across(c(eta_form, eta, eta_l, eta_u), ~ round(., 0)))
+
+# Writing the uncertainty values in the following form (<lower>, <upper>) for both psi-related and eta-related uncertainties
+df_out <- df_out %>%
+  mutate(psi_ci = paste0("(", psi_l, ", ", psi_u, ")"),
+         eta_ci = paste0("(", eta_l, ", ", eta_u, ")")) %>%
+  select(country, article, psi_form, psi, psi_ci, eta_form, eta, eta_ci, -c(psi_l, psi_u, eta_l, eta_u)) 
+
+path_results <- "~/ubuntu_research/Research/adjusted_psi/results/uncertainty"
+setwd(path_results)
+write.csv(df_out, file = "uncertainty_psi_eta.csv", row.names = FALSE)
+```
+## Difference in psi estimates using formalism and using Monte Carlo simulation
+```{r}
+psi_diff <- df$psi - df$psi_form
+summary(psi_diff)
+```
+
+```{r}
+# Finding estimates where psi is out of the 25th and 75th percentiles of psi_mc
+out_of_ci <- which((df$psi < df$psi_l) | (df$psi > df$psi_u))
+df$article[out_of_ci]
+
+psi_diff[out_of_ci]
+```
+
+## Distribution of eta
+```{r}
+# Define categorical bins for eta
+df$eta_range <- cut(df$eta,
+                    breaks = c(-Inf, 0, 25, 50, 75, 100, Inf),
+                    labels = c("0", "0-25", "25-50", "50-75", "75-100", "> 100"),
+                    right = FALSE)  # Intervals include left endpoint and exclude right
+
+# Finding how many estimates are present in each bins
+print(table(df$eta_range))
+
+```
+
+### Plotting the distribution
+```{r}
+# Create histogram
+plt <- ggplot(df, aes(x = eta_range)) +
+  geom_bar(fill = "skyblue", color = "black", width = 1) +
+  theme_minimal() +
+  scale_x_discrete(breaks = levels(df$eta_range)) +
+  labs(x = expression(paste(eta, " (%)"))) +
+  theme(text = element_text(family = "Helvetica"),
+          axis.text.x = element_text(size = s_text, colour = "black", angle = 30, hjust = 1),
+          axis.text.y = element_text(size = s_text, colour = "black"),
+          axis.title = element_blank(),
+          axis.ticks.y = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.x = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.length = unit(length_tick-0.05, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+          legend.position = "none",
+          plot.margin = margin(5, 5, 5, 10))
+
+plt
+```
+
+
+
+## 3.2. Comparing psi and psi_c
+
+```{r}
+# Count number of estimates where psi >= psi_c
+print(length(which(df$psi >= df$psi_c)))
+print(length(which(df$psi >= df$psi_c)))
+
+df$article[which((df$psi < df$psi_c) & (df$psi >= df$psi_c))]
+
+# printing above estimates with article, psi_c, psi, and psi
+df %>%
+  filter((psi < psi_c) & (psi >= psi_c)) %>%
+  select(article, psi_c, psi, psi)
+
+# Compute median values of psi_c and psi
+print(median(df$psi_c, na.rm = TRUE))
+print(median(df$psi, na.rm = TRUE))
+
+# Wilcoxon signed-rank test for paired comparison of psi and psi_c
+wilcox_test <- wilcox.test(df$psi - df$psi_c, 
+                           mu = 0, 
+                           alternative = "greater", 
+                           na.rm = TRUE, 
+                           conf.int = 0.95)
+print(wilcox_test)
+
+```
+
+### 3.2.1. Scatter plot of psi versus psi_c (Figure 1b)
+
+```{r}
+
+quant_eta <- quantile(df$eta, probs = c(0, 0.25, 0.5, 0.75, 1))
+df_quant_eta <- as.data.frame(t(quant_eta))
+colnames(df_quant_eta) <- c("Min", "Q1", "Median", "Q3", "Max")
+
+scale_vector <- as.numeric(round(df_quant_eta[1,]))
+# Create plot
+plt <- ggplot(df) +
+  geom_line(aes(x = psi_c, y = psi_c), color = "black", linetype = "dashed", size = 1) +
+  geom_errorbar(aes(x = psi_c, ymin = psi_l, ymax = psi_u),   
+                color = "black", width = 0.01, size = 0.5, alpha = 0.8) +
+  geom_point(aes(x = psi_c, y = psi, fill = eta), 
+             shape = 21, color = "black", size = s_point+1) +
+  # Annotate country labels using geom_text_repel()
+  geom_text_repel(data = df, aes(x = psi_c, y = psi, label = country, 
+                                  colour = eta), angle = 90, max.overlaps = Inf,
+                  size = 6, nudge_y = 0.01) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1.02), 
+                     expand = c(0, 0)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1.03), 
+                     expand = c(0, 0)) +
+  scale_fill_gradientn(colours = c("darkviolet", "darkblue", "dodgerblue", 
+                                   "darkgreen", "gold", "chocolate", "firebrick3"),
+                       values = scales::rescale(scale_vector)) +  
+  # The breaks come from the quantiles of eta
+  
+  scale_colour_gradientn(colours = c("darkviolet", "darkblue", "dodgerblue", 
+                                     "darkgreen", "gold", "chocolate", "firebrick3"),
+                         values = scales::rescale(scale_vector)) + 
+  labs(x = expression(italic(psi[c])), y = expression(italic(psi))) +
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+    axis.text = element_text(size = s_text+2, colour = "black"),
+    axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+        axis.ticks.length = unit(length_tick, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+
+plt
+
+
+```
+
+## Know the mapping of the colors to eta values
+```{r}
+
+rescaled_vals <- scales::rescale(as.numeric(quant_eta))
+color_names <- c("darkviolet", "darkblue", "dodgerblue", 
+                 "darkgreen", "gold", "chocolate", "firebrick3")
+
+
+eta_min <- min(df$eta)
+eta_max <- max(df$eta)
+approx_eta_values <- scales::rescale(seq(0, 1, length.out = 7), 
+                                     from = c(0, 1), 
+                                     to = c(eta_min, eta_max))
+
+data.frame(
+  Color = color_names,
+  Approx_eta = approx_eta_values
+)
+
+# Finding esuties whose eta values are close to the approx_eta_values
+for (val in approx_eta_values) {
+  closest_article <- df$article[which.min(abs(df$eta - val))]
+  closest_eta <- df$eta[which.min(abs(df$eta - val))]
+  print(paste("Approx eta:", round(val, 2), 
+              "Closest article:", closest_article, 
+              "Closest eta:", round(closest_eta, 2)))
+}
+```
+
+
+### 3.2.2. Violin plots of psi_c and psi (Figure 1c)
+
+```{r}
+# Convert data to long format for violin plot
+df_long <- melt(df, measure.vars = c("psi_c", "psi"))
+
+# Generate violin plot
+plt <- ggplot(df_long[df_long$variable %in% c("psi_c", "psi"), ],
+             aes(x = variable, y = value, fill = variable)) +
+  geom_violin(position = position_dodge(width = 0.8), 
+              trim = TRUE, scale = "width",
+              width = 0.8, size = 1, alpha = 0.3) +
+  geom_boxplot(width = 0.4, color = "black", outlier.shape = NA, 
+               alpha = 0.5, size = 1, fatten=1.25) +
+  scale_fill_manual("values" = c("psi_c" = "orange", "psi" = "red")) +
+  geom_jitter(shape = 21, width = 0.2, size = s_scatter, color = "black") +
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+          axis.text.x = element_blank(),
+          axis.title = element_blank(),
+          axis.text.y = element_text(size = s_text, colour = "black"),
+          # axis.title.y = element_text(size = s_title, colour = "black", face = "plain"),
+          axis.ticks.y = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.x = element_blank(),
+          axis.ticks.length.y = unit(length_tick, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+          legend.position = "none")
+plt
+```
+
+# 4. Factors contributing to the correction in the estimate of prevalence
+## 4.1. Correlation between predictors of eta (phi_c, beta, alpha, and rho_c) (Figure S2)
+
+```{r, warning=FALSE}
+# Scatter plots
+my_theme <- theme(text = element_text(family = "Helvetica"),
+          axis.text.x = element_blank(),
+          axis.title = element_blank(),
+          axis.text.y = element_text(size = s_text, colour = "black"),
+          # axis.title.y = element_text(size = s_title, colour = "black", face = "plain"),
+          axis.ticks.y = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.x = element_blank(),
+          axis.ticks.length.y = unit(length_tick, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+          legend.position = "none")
+
+## alpha and phi_c
+plt1 <- ggplot(df, aes(x = phi_c, y = alpha)) +
+  geom_point(size = s_point, color= "black") +
+  labs(y = expression(alpha)) +
+  theme_bw() +
+  my_theme
+
+plt1
+
+## beta and phi_c
+plt2 <- ggplot(df, aes(x = phi_c, y = beta)) +
+  geom_point(size = s_point, color= "black") +
+  labs(y = expression(beta)) +
+  theme_bw() +
+  my_theme
+
+plt2
+
+## rho_c and phi_c
+plt3 <- ggplot(df, aes(x = phi_c, y = rho_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(x = expression(Phi[c]), y = expression(rho[c])) +
+  theme_bw() +
+  my_theme
+
+plt3
+
+## beta and alpha
+plt4 <- ggplot(df, aes(x = alpha, y = beta)) +
+  geom_point(size = s_point, color= "black") +
+  theme_bw() +
+  my_theme
+
+plt4
+
+## rho_c and alpha
+plt5 <- ggplot(df, aes(x = alpha, y = rho_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(x = expression(alpha)) +
+  theme_bw() +
+  my_theme
+
+plt5
+
+## rho_c and beta
+plt6 <- ggplot(df, aes(x = beta, y = rho_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(x = expression(beta)) +
+  theme_bw() +
+  my_theme
+
+plt6
+
+# correlation of psi_c with all other parameters
+plt7 <- ggplot(df, aes(x = phi_c, y = psi_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(x = expression(Phi[c]), y = expression(psi[c])) +
+  theme_bw() +
+  my_theme
+
+plt8 <- ggplot(df, aes(x = alpha, y = psi_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(y = expression(psi[c])) +
+  theme_bw() +
+  my_theme
+
+plt9 <- ggplot(df, aes(x = beta, y = psi_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(y = expression(psi[c])) +
+  theme_bw() +
+  my_theme
+
+plt10 <- ggplot(df, aes(x = rho_c, y = psi_c)) +
+  geom_point(size = s_point, color= "black") +
+  labs(x = expression(rho[c]), y = expression(psi[c])) +
+  theme_bw() +
+  my_theme
+
+# Compute Spearman's correlation coefficients
+cor1 <- cor.test(df$alpha, df$phi_c, method = "spearman")
+cor1
+cor2 <- cor.test(df$beta, df$phi_c, method = "spearman")
+cor2
+cor3 <- cor.test(df$rho_c, df$phi_c, method = "spearman")
+cor3
+cor4 <- cor.test(df$beta, df$alpha, method = "spearman")
+cor4
+cor5 <- cor.test(df$rho_c, df$alpha, method = "spearman")
+cor5
+cor6 <- cor.test(df$rho_c, df$beta, method = "spearman")
+cor6
+cor7 <- cor.test(df$phi_c, df$psi_c, method = "spearman")
+cor7
+cor8 <- cor.test(df$alpha, df$psi_c, method = "spearman")
+cor8
+cor9 <- cor.test(df$beta, df$psi_c, method = "spearman")
+cor9
+cor10 <- cor.test(df$rho_c, df$psi_c, method = "spearman")
+cor10
+
+```
+
+## 4.3. Correlation between eta and predictors (Figure S3 and Figure 2)
+```{r}
+# Compute correlation coefficients
+cor1 <- cor.test(df$beta, df$eta, method = "spearman")
+cor1
+cor2 <- cor.test(df$alpha, df$eta, method = "spearman")
+cor2
+cor3 <- cor.test(df$rho_c, df$eta, method = "spearman")
+cor3
+cor4 <- cor.test(df$phi_c, df$eta, method = "spearman")   # Used in Figure 2
+cor4
+cor4$p.value    
+
+my_theme <- theme(text = element_text(family = "Helvetica"),
+          axis.text = element_text(size = s_text, colour = "black"),
+          axis.title = element_blank(),
+          axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+          axis.ticks.length = unit(length_tick-0.05, "cm"),
+          panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+          legend.position = "none")
+
+## eta and beta
+plt1 <- ggplot(df, aes(x = beta, y = eta)) +
+  geom_point(size = s_point-1.5, color= "black") +
+  labs(x = expression(beta), y = expression(paste(eta, " (%)"))) +
+  theme_bw() +
+  my_theme
+
+plt1
+
+## eta and alpha
+plt2 <- ggplot(df, aes(x = alpha, y = eta)) +
+  geom_point(size = s_point-1.5, color= "black") +
+  labs(x = expression(alpha), y = expression(paste(eta, " (%)"))) +
+  theme_bw() +
+  my_theme
+
+plt2
+
+## eta and rho_c
+plt3 <- ggplot(df, aes(x = rho_c, y = eta)) +
+  geom_point(size = s_point-1.5, color= "black") +
+  scale_x_continuous(limits=c(0, 0.602)) +
+  labs(x = expression(rho[c]), y = expression(paste(eta, " (%)"))) +
+  theme_bw() +
+  my_theme
+
+plt3
+
+```
+## 4.4. Dependence of eta on phi_c
+
+### MC simulation for estimating eta distribution for a perfect test
+
+```{r}
+n_iter <- 10000
+
+eta_model <- phi_c_model <- numeric(nrow(df))
+for (i in 1:nrow(df)) {
+  phi_c_dis <- rbinom(n_iter, df$sn[i], df$phi_c[i]) / df$sn[i]
+  phi_c_model[i] <- quantile(phi_c_dis, 0.5)
+  eta_dis <- 100*phi_c_dis/(1-phi_c_dis)
+  eta_model[i] <- quantile(eta_dis, 0.5)
+}
+
+df_eta_model <- data.frame(
+  country = df$country,
+  article = df$article,
+  phi_c = df$phi_c,
+  phi_c_model = phi_c_model,
+  eta = df$eta,
+  eta_model = eta_model
+)
+
+# Model-based prediction on data of all the serosurveys included in our work
+## Compute residual sum of squares (RSS) and total sum of squares (TSS)
+rss <- sum((df_eta_model$eta_model - df_eta_model$eta)^2)
+tss <- sum((df_eta_model$eta - mean(df_eta_model$eta))^2)
+
+## Compute R-squared value
+r_sq <- 1-rss/tss
+r_sq
+
+summary(lm(df_eta_model$eta ~ df_eta_model$eta_model))$r.squared
+
+```
+
+## 4.5. Model Prediction of Serosurvey Data (Figure 2)
+```{r}
+# Generate model-based prediction
+sn_sample <- 10000  # Sample size for estimating eta for a perfect test
+nrow_sample <- 1000  # Number of samples for estimating eta for a perfect test
+phi_c_sample <- seq(min(df$phi_c), max(df$phi_c), length.out = nrow_sample)
+
+eta_model <- phi_c_model <- numeric(nrow_sample)
+for (i in 1:nrow_sample) {
+  phi_c_dis <- rbinom(n_iter, sn_sample, phi_c_sample[i]) / sn_sample
+  phi_c_model[i] <- quantile(phi_c_dis, 0.5)
+  eta_dis <- 100*phi_c_dis/(1-phi_c_dis)
+  eta_model[i] <- quantile(eta_dis, 0.5)
+}
+
+df_eta_fit <- data.frame(
+  phi_c_model = phi_c_model,
+  eta_model = eta_model
+)
+```
+
+
+```{r}
+phi_c_form <- seq(min(df$phi_c), max(df$phi_c), length.out = nrow_sample)
+df_eta_fit$eta_form <- 100*phi_c_form/(1-phi_c_form)
+
+# Create plot
+plt <- ggplot() +
+  geom_line(data = df_eta_fit, aes(x = phi_c_model, y = eta_model), color = "black",
+            linewidth = 1) +   # eta_model
+  # geom_line(data = df_eta_fit, aes(x = phi_c_model, y = eta_form), color = "red",
+  #           linewidth = 1) +   # eta_model
+  geom_point(data = df, aes(x = phi_c, y = eta, fill = eta), shape=21, color = "black",
+             size = s_point+1, position = "jitter") +   # eta from data of quantities in Q from all the serosurveys
+  geom_text_repel(data = df, aes(x = phi_c, y = eta, label = country, color = eta),
+                  angle = 90,
+                  nudge_x = 0.015,
+                  size = 6,
+                  min.segment.length = 1,
+                  max.overlaps = Inf) +
+  scale_fill_gradientn(colours = c("darkviolet", "darkblue", "dodgerblue", 
+                                   "darkgreen", "gold", "chocolate", "firebrick3"),
+                       values = scales::rescale(scale_vector)) +
+  scale_colour_gradientn(colours = c("darkviolet", "darkblue", "dodgerblue", 
+                                     "darkgreen", "gold", "chocolate", "firebrick3"),
+                         values = scales::rescale(scale_vector)) + 
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+    axis.text = element_text(size = s_text+2, colour = "black"),
+    axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+        axis.ticks.length = unit(length_tick, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+
+plt
+```
+
+## Getting R-squared value for the model prediction
+
+```{r}
+path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/final_codes"
+setwd(path_code)
+source("monte_carlo_eta.R")
+
+n_iter <- 100000
+n_iter_rsq <- 1000
+n_est <- nrow(df)
+
+# Pre-allocate eta_dis matrix efficiently
+eta_dis <- matrix(NA_real_, nrow = n_est, ncol = n_iter)
+
+# Monte Carlo simulation (you could parallelize this if desired)
+for (i in seq_len(n_est)) {
+  eta_dis[i, ] <- monte_carlo(
+    df$n[i], df$sp[i], df$sn[i], n_iter, 
+    df$rho_c[i], df$psi_c[i], df$phi_c[i],
+    df$alpha_a[i], df$alpha_b[i], df$beta_a[i], df$beta_b[i]
+  )
+}
+
+eta_model <- 100 * df$phi_c / (1 - df$phi_c)
+
+# Draw random samples from each eta distribution (vectorized)
+set.seed(123)
+sample_indices <- matrix(
+  sample(seq_len(n_iter), size = n_est * n_iter_rsq, replace = TRUE),
+  nrow = n_est, ncol = n_iter_rsq
+)
+eta_samples <- matrix(NA_real_, nrow = n_est, ncol = n_iter_rsq)
+
+for (i in seq_len(n_est)) {
+  eta_samples[i, ] <- eta_dis[i, sample_indices[i, ]]
+}
+
+# Calculating 95% CI of eta from eta_samples for 58 estimates
+eta_df <- data.frame(
+  country = df$country,
+  article = df$article,
+  phi_c = df$phi_c,
+  phi_c_trans = df$phi_c / (1 - df$phi_c),
+  eta_lower = apply(eta_samples, 1, quantile, probs = 0.025, na.rm = TRUE),
+  eta_median = apply(eta_samples, 1, quantile, probs = 0.5, na.rm = TRUE),
+  eta_upper = apply(eta_samples, 1, quantile, probs = 0.975, na.rm = TRUE),
+  eta_model = eta_model
+)
+
+cv <- matrix(eta_mean, nrow = n_est, ncol = n_iter_rsq, byrow = TRUE)
+str(cv)
+# Compute R² for each iteration
+eta_mean <- colMeans(eta_samples, na.rm = TRUE)              # mean η across studies per iteration
+rss <- colSums((eta_model - eta_samples)^2, na.rm = TRUE)    # residual sum of squares
+tss <- colSums((eta_samples - matrix(eta_mean, nrow = n_est, ncol = n_iter_rsq, byrow = TRUE))^2, na.rm = TRUE)
+r_sq <- 1 - rss / tss
+
+# Summary statistics
+median_rsq <- median(r_sq, na.rm = TRUE)
+iqr_rsq <- quantile(r_sq, probs = c(0.25, 0.75), na.rm = TRUE)
+
+cat("Median R² =", round(median_rsq, 3), "\n")
+cat("IQR of R² =", round(iqr_rsq[2] - iqr_rsq[1], 3), "\n")
+
+```
+
+# 5. Improved consistency between estimates of prevalence
+## 5.1. Dataset of countries with multiple studies
+
+```{r}
+# Extracting countries where multiple studies were available
+df_multiple <- df %>% 
+  group_by(country) %>% 
+  filter(n() > 1) %>% 
+  ungroup()
+
+# Obtaining variance of psi_c and psi within countries with multiple studies
+country_variance <- df_multiple %>% 
+  group_by(country) %>% 
+  summarise(var_c = var(psi_c),
+            var = var(psi),
+            var_red = (var(psi_c)-var(psi))*100/var(psi_c))
+
+
+# exporting results
+# setwd(path_results)
+# write.csv(country_variance, "country_variance.csv", row.names = FALSE)
+## var_red: Percentage reduction in variance before and after correction
+# view(country_variance)
+
+# Perform a one-tailed paired t-test to test if variance reduction is significant
+t_test_result <- t.test(country_variance$var, country_variance$var_c, 
+                        paired = TRUE, alternative = "less")
+t_test_result
+
+# Setting NA values to country Germany and UK
+# country_variance$var_red[country_variance$country %in% c("Germany", "UK")] <- NA
+# country_variance <- country_variance %>%
+#   filter(!is.na(var_red))
+
+# Bar plot of percentage reduction in variance with number of studies in a country shown as text
+# plt <- ggplot(country_variance, aes(x = reorder(country, -var_red), y = var_red)) +
+#   geom_bar(stat = "identity", fill = "lightblue", color = "black", width = 0.7) +
+#   labs(x = "Country", y = "Percentage reduction in variance") +
+#   theme_minimal() +
+#   theme(
+#     # axis.text = element_blank(),
+#     #     axis.title = element_blank(),
+#     axis.text.x = element_text(size = 11, colour = "black", angle = 45, hjust = 1),
+#         axis.text.y = element_text(size = 11, colour = "black"),
+#         axis.ticks = element_line(linewidth = 0.75, colour="black"),
+#         panel.border = element_rect(colour = "black", fill=NA, size=s_border),
+#         plot.margin = margin(5, 5, 5, 10),
+#         legend.position = "none")
+# plt
+
+
+```
+## 5.2. Dataset of all countries (with single or multiple studies)
+
+```{r}
+library(car)
+
+# Percentage reduction in variance following correction
+print((var(df$psi_c) - var(df$psi))*100/var(df$psi_c))
+
+# Combine data into a single dataframe to do significance test
+df1 <- data.frame(
+  value = c(df$psi_c, df$psi),
+  group = rep(c("psi_c", "psi"), times = c(length(df$psi_c), length(df$psi)))
+)
+
+# Perform Levene's test
+levene_test_result <- leveneTest(value ~ group, data = df1)
+
+# Display results
+print(levene_test_result)
+
+```
+
+# Robustness of results against sample size
+1. Where psi for 58 studies and plot it against sample size (on x axis)
+```{r}
+# Interval width of psi
+df$rel_width_psi <- (df$psi_u - df$psi_l)/df$psi
+
+# Checking correlation between rel_width_psi and sample size
+cor_test <- cor.test(df$n, df$rel_width_psi, method = "spearman")
+print(cor_test)
+
+# Scatter plot of psi vs sample size
+plt <- ggplot(df, aes(x = n, y = rel_width_psi)) +
+  # geom_errorbar(aes(ymin = psi_l, ymax = psi_u), color = "black", width = 0.1, size = 0.5, alpha = 0.8) +
+  geom_point(shape = 21, color = "black", fill = "black", size = s_point-1.5) +
+  scale_x_continuous(trans = 'log10') +
+  # scale_y_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1.03), 
+  #                  expand = c(0, 0)) +
+  labs(x = "Sample size", y = expression(italic(psi))) +
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+    axis.text = element_text(size = s_text-2, colour = "black"),
+    axis.title = element_blank(),
+        axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+        axis.ticks.length = unit(length_tick, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                    size = width_border),
+        legend.position = "none")
+plt
+```
+
+# Extra calculations
+## Comparison of psi and psi_mc 
+```{r}
+# Scatter plot of psi vs psi
+plt <- ggplot(df) +
+  geom_line(aes(x = psi, y = psi), color = "black", linetype = "dashed", size = 1) +
+  geom_point(aes(x = psi, y = psi, fill = ifelse(abs(psi - psi) > 0.08,"lightblue",  "red")),
+             shape = 21, color = "black", size = s_point) +
+  # geom_point(aes(x = psi, y = psi),
+  #            shape = 21, color = "black", fill = "lightblue", size = s_point) +
+  # Annotate country labels using geom_text_repel()
+    geom_text_repel(aes(x = psi, y = psi, label = round(psi - psi, 2)), angle = 90, max.overlaps = 8,
+                  size = 3) +
+  labs(x = expression(italic(psi[mc])), y = expression(italic(psi))) +
+  theme_minimal() +
+  theme(text = element_text(family = "Helvetica"),
+        axis.text = element_text(size = s_text, colour = "black"),
+        axis.title = element_text(size = s_title, colour = "black", face = "plain"),
+        axis.ticks = element_line(linewidth = width_tick, colour = "black"),
+        axis.ticks.length = unit(length_tick, "cm"),
+        panel.border = element_rect(colour = "black", fill = NA, 
+                                  size = width_border),
+        legend.position = "none")
+plt
+```
+
+### For some of the estimates, difference in psi and psi is large (abs(psi - psi) > 0.08). For these estimates, we want to see whihc our of psi or psi is close to the true value of asymptomatic fraction.
+
+```{r}
+# Extracting estimates with large difference in psi and psi
+df_large_diff <- df %>% filter(abs(psi - psi) > 0.08)
+path <- "~/ubuntu_research/Research/adjusted_psi/data/final_data"
+setwd(path)
+write.csv(df_large_diff, "large_diff_psi_psi_mc.csv", row.names = FALSE)
+```
+
+
+
+
