@@ -117,7 +117,7 @@ results_list <- vector("list", nrow(df))
 path_code <- "/mnt/sdb/academic/Research/adjusted_psi/codes/with_synthetic_data/psi"
 setwd(path_code)
 source("generation_psi.R")
-source("mit_evol_psi.R")
+source("21_mit_evol_psi.R")
 source("formalism.R")
 
 set.seed(123)
@@ -282,7 +282,7 @@ results_list <- vector("list", nrow(df))
 path_code <- "/mnt/sdb/academic/Research/adjusted_psi/codes/with_synthetic_data/psi"
 setwd(path_code)
 source("generation_psi.R")
-source("mit_evol_psi.R")
+source("21_mit_evol_psi.R")
 source("formalism.R")
 
 set.seed(123)
