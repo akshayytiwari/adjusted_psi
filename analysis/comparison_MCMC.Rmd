@@ -1,0 +1,361 @@
+---
+  title: Comparison of our formalism and Mitchell et al. with synthetic data
+---
+  
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(rjags)
+library(coda)
+library(tibble)
+library(here)
+library(effsize)
+```
+
+# --- 1. Read study parameters and simulate data, fit models in a loop ---
+
+## Creating a small grid of parameters
+We will take 5 scenarios sampled from distributions centred at the empirical
+medians of the parameters in our dataset.\n
+We will use the empirical variability from the dataset.
+
+```{r}
+# Extract medians from 50 studies
+path <- "~/adjusted_psi/data"
+setwd(path)
+df_main <- read.csv("./data_main.csv")
+```
+
+
+```{r}
+n_med <- 10000
+rho_med <- median(df_main$rho_c, na.rm = TRUE)
+psi_med <- median(df_main$psi_c, na.rm = TRUE)
+phi_med <- median(df_main$phi_c, na.rm = TRUE)
+alpha_med <- median(df_main$alpha, na.rm = TRUE)-
+beta_med  <- median(df_main$beta,  na.rm = TRUE)
+
+# Define variability around medians
+n_sd     <- sd(df_main$n, na.rm = TRUE)
+rho_sd   <- sd(df_main$rho_c, na.rm = TRUE)
+psi_sd   <- sd(df_main$psi_c, na.rm = TRUE)
+phi_sd   <- sd(df_main$phi_c, na.rm = TRUE)
+alpha_sd <- sd(df_main$alpha, na.rm = TRUE)
+beta_sd  <- sd(df_main$beta,  na.rm = TRUE)
+
+scale_factor <- 0.5   # moderate spread
+
+# Truncated normal sampling to ensure parameters stay within (0,1)
+rtrunc_norm <- function(n, mean, sd) {
+  x <- rnorm(n, mean, sd)
+  pmin(pmax(x, 0.001), 0.999)
+}
+
+## Truncated normal sampling for sample size (>1)
+rtrunc_norm_n <- function(n, mean, sd) {
+  x <- rnorm(n, mean, sd)
+  pmax(round(x), 500)
+}
+
+# Generating 5 scenarios
+set.seed(123)
+
+n_cases <- 5
+
+n_vals     <- round(n_med)
+rho_vals   <- rtrunc_norm(n_cases, rho_med,   scale_factor * rho_sd)
+psi_vals   <- rtrunc_norm(n_cases, psi_med,   scale_factor * psi_sd)
+phi_vals   <- rtrunc_norm(n_cases, phi_med,   scale_factor * phi_sd)
+alpha_vals <- rtrunc_norm(n_cases, alpha_med, scale_factor * alpha_sd)
+beta_vals  <- rtrunc_norm(n_cases, beta_med,  scale_factor * beta_sd)
+
+# Convert alpha and beta to Beta parameters (kappa = 50)
+kappa <- 40
+
+alpha_a <- alpha_vals * kappa
+alpha_b <- (1 - alpha_vals) * kappa
+
+beta_a  <- beta_vals * kappa
+beta_b  <- (1 - beta_vals) * kappa
+
+# Enforce minimum value
+alpha_a <- pmax(alpha_a, 1)
+alpha_b <- pmax(alpha_b, 1)
+beta_a  <- pmax(beta_a, 1)
+beta_b  <- pmax(beta_b, 1)
+
+df_sim <- data.frame(
+  article = paste0("Case_", 1:n_cases),
+  n = n_vals,
+  rho_c = rho_vals,
+  psi_c = psi_vals,
+  phi_c = phi_vals,
+  alpha_mean = alpha_vals,
+  beta_mean  = beta_vals,
+  alpha_a = alpha_a,
+  alpha_b = alpha_b,
+  beta_a  = beta_a,
+  beta_b  = beta_b
+)
+
+df_sim$article <- paste0("Case_", seq_len(nrow(df_sim)))
+
+df_sim$alpha <- df_sim$alpha_a / (df_sim$alpha_a + df_sim$alpha_b)
+df_sim$beta <- df_sim$beta_a  / (df_sim$beta_a  + df_sim$beta_b)
+
+df <- df_sim
+
+```
+
+
+```{r}
+
+results_list <- vector("list", nrow(df))
+
+# Sourcing functions
+# path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+path_code <- "/mnt/sdb/academic/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi.R")
+source("mit_evol_psi.R")
+source("formalism.R")
+
+set.seed(123)
+for (i in seq_len(nrow(df))) {
+  study <- df[i, ]
+  n <- study$n
+  n_iter_mc <- 100000
+  rho <- study$rho_c
+  psi <- study$psi_c
+  phi <- study$phi_c
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic(n, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)
+  
+  # --- 2. Analytical formalism Monte Carlo ---
+  out_form <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)
+  
+  # --- 3. Fit Bayesian (Mitchell et al.) method ---
+  x_simulated <- c(n_sym_pos, n_asym_pos, n_sym_neg, n_asym_neg)
+  out_mit <- model_mitchell(x_simulated, gamma_val = 1, sen_a, sen_b, spe_a, spe_b)
+  
+  # Store results in data frame
+  
+  vars <- list(
+    article = study$article,
+    n = study$n,
+    
+    ## --- Formalism
+    rho_form_median = as.numeric(quantile(out_form$rho_form, 0.5)),
+    rho_form_lower = as.numeric(quantile(out_form$rho_form, 0.025)),
+    rho_form_upper = as.numeric(quantile(out_form$rho_form, 0.975)),
+    
+    psi_form_median = as.numeric(quantile(out_form$psi_form, 0.5)),
+    psi_form_lower = as.numeric(quantile(out_form$psi_form, 0.025)),
+    psi_form_upper = as.numeric(quantile(out_form$psi_form, 0.975)),
+    
+    ## --- Bayesian (Mitchell et al.)
+    rho_mit_median = out_mit["P_Z_Median"],
+    rho_mit_lower = out_mit["P_Z_CrI_Lower"],
+    rho_mit_upper = out_mit["P_Z_CrI_Upper"],
+    
+    psi_mit_median = 1 - out_mit["P_SZ_Median"],
+    psi_mit_lower = 1 - out_mit["P_SZ_CrI_Upper"],
+    psi_mit_upper = 1 - out_mit["P_SZ_CrI_Lower"]
+
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+  cat(sprintf("Study %s completed \n", study$article))
+}
+
+```
+
+# --- 2. Combine results ---
+```{r}
+results_df <- do.call(rbind, results_list)
+# acc_rate_df <- do.call(rbind, acc_rate_list)
+
+results_df <- as.data.frame(results_df)
+results_df[] <- lapply(results_df, function(x) if(is.numeric(x)) round(x, 4) else x)
+
+# Adding columns
+results_df <- results_df %>%
+  mutate(
+    rho_true =df$rho_c,
+    psi_true = df$psi_c,
+    phi_true = df$phi_c,
+    
+    # Formalism
+    rho_form_delta = (rho_true - results_df$rho_form_median)*100/rho_true,
+    rho_form_width = results_df$rho_form_upper - results_df$rho_form_lower,
+    
+    psi_form_delta = (psi_true - results_df$psi_form_median)*100/psi_true,
+    psi_form_width = results_df$psi_form_upper - results_df$psi_form_lower,
+    
+    # Bayesian (evolving sen and spe)
+    rho_mit_delta = (rho_true - results_df$rho_mit_median)*100/rho_true,
+    rho_mit_width = results_df$rho_mit_upper - results_df$rho_mit_lower,
+    
+    psi_mit_delta = (psi_true - results_df$psi_mit_median)*100/psi_true,
+    psi_mit_width = results_df$psi_mit_upper - results_df$psi_mit_lower)
+
+# round off all columns, except article and n to 3 decimal places
+results_df <- results_df %>%
+  mutate(across(-c(article, n), ~ round(.x, 3)))
+
+# Arranging the column to facilitate the comparison between estimates of MCMC and our formalism
+results_df_filtered <- results_df %>%
+  select(article, n, phi_true, rho_true, rho_form_median, rho_mit_median,
+         rho_form_delta, rho_mit_delta, rho_form_width, rho_mit_width, 
+         psi_true, psi_form_median, psi_mit_median, psi_form_delta, psi_mit_delta,
+         psi_form_width, psi_mit_width)
+
+# renaming article column to Case
+colnames(results_df)[1] <- "Case"
+
+results_df_med <- results_df %>% 
+  select(Case, n, phi_true, rho_true, rho_form_median, rho_form_lower, rho_form_upper,
+         rho_mit_median, rho_mit_lower, rho_mit_upper, psi_true,
+         psi_form_median, psi_form_lower, psi_form_upper,
+         psi_mit_median, psi_mit_lower, psi_mit_upper)
+
+# I want the credible intervals for formalism and Mithcell et al. to be shown in the following way: median (lower, upper)
+results_df_med_edited <- results_df_med %>%
+  mutate(
+    rho_form_CI = paste0(rho_form_median, " (", rho_form_lower, ", ", rho_form_upper, ")"),
+    rho_mit_CI = paste0(rho_mit_median, " (", rho_mit_lower, ", ", rho_mit_upper, ")"),
+    psi_form_CI = paste0(psi_form_median, " (", psi_form_lower, ", ", psi_form_upper, ")"),
+    psi_mit_CI = paste0(psi_mit_median, " (", psi_mit_lower, ", ", psi_mit_upper, ")")
+  ) %>%
+  select(Case, n, rho_true, rho_form_CI, rho_mit_CI,
+         psi_true, psi_form_CI, psi_mit_CI)
+
+# df with delta nd width
+results_df_delta_width <- results_df %>%
+  select(Case, rho_true, rho_form_delta, 
+         rho_mit_delta, rho_form_width, rho_mit_width, psi_true, psi_form_delta,
+        psi_mit_delta,  psi_form_width, psi_mit_width)
+# Export results_df as .csv file
+results_path <- "/mnt/sdb/academic/Research/adjusted_psi/results/comparison-with-Mitchell/with_synthetic-data"
+setwd(results_path)
+write.csv(results_df_med_edited, "results_df.csv", row.names = FALSE)
+write.csv(results_df_delta_width, "results_df_delta_width.csv", row.names = FALSE)
+
+
+```
+
+
+# --- 3. Binomial sampling with true estimates ---
+
+```{r}
+
+results_list <- vector("list", nrow(df))
+
+# Sourcing functions
+# path_code <- "~/ubuntu_research/Research/adjusted_psi/codes/with_synthetic_data/psi"
+path_code <- "/mnt/sdb/academic/Research/adjusted_psi/codes/with_synthetic_data/psi"
+setwd(path_code)
+source("generation_psi.R")
+source("mit_evol_psi.R")
+source("formalism.R")
+
+set.seed(123)
+for (i in seq_len(nrow(df))) {
+  study <- df[i, ]
+  n <- study$n
+  n_iter_mc <- 100000
+  rho <- study$rho_c
+  psi <- study$psi_c
+  phi <- study$phi_c
+  
+  sen_a <- study$alpha_a
+  sen_b <- study$alpha_b
+  spe_a <- study$beta_a
+  spe_b <- study$beta_b
+  
+  # --- 1. Simulate data for this study
+  out_synthetic <- synthetic(n, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)
+  n_sym_pos <- out_synthetic$n_sym_pos
+  n_asym_pos <- out_synthetic$n_asym_pos
+  n_sym_neg <- out_synthetic$n_sym_neg
+  n_asym_neg <- out_synthetic$n_asym_neg
+  n_total <-  n_sym_pos + n_asym_pos + n_sym_neg + n_asym_neg
+  
+  ## Crude estimates
+  rho_c <- (n_sym_pos + n_asym_pos) / n_total
+  psi_c <- n_asym_pos / (n_sym_pos + n_asym_pos)
+  phi_c <- n_sym_neg / (n_sym_neg + n_asym_neg)
+  
+  # --- 2. Analytical formalism Monte Carlo with true estimates---
+  out_form_true <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho, psi, phi, sen_a, sen_b, spe_a, spe_b)
+  
+  # --- 3. Analytical formalism Monte Carlo with crude estimates---
+  out_form_c <- model_formalism(n, n_sym_pos + n_asym_pos, n_sym_neg + n_asym_neg, 
+                              n_iter_mc, rho_c, psi_c, phi_c, sen_a, sen_b, spe_a, spe_b)
+  
+  
+  # Store results in data frame
+  
+  vars <- list(
+    article = study$article,
+    n = study$n,
+    
+    ## --- Formalism
+    
+    psi_form_median_true = as.numeric(quantile(out_form_true$psi_form, 0.5)),
+    psi_form_lower_true = as.numeric(quantile(out_form_true$psi_form, 0.025)),
+    psi_form_upper_true = as.numeric(quantile(out_form_true$psi_form, 0.975)),
+    
+    psi_form_median_c = as.numeric(quantile(out_form_c$psi_form, 0.5)),
+    psi_form_lower_c = as.numeric(quantile(out_form_c$psi_form, 0.025)),
+    psi_form_upper_c = as.numeric(quantile(out_form_c$psi_form, 0.975))
+
+  )
+  
+  lapply(vars, function(v)
+    if (is.null(v) |
+        any(is.na(v)))
+      stop("Some result variable is NULL or NA"))
+  
+  # Then construct your data.frame as usual
+  study_res <- as.data.frame(vars)
+  
+  results_list[[i]] <- study_res
+  
+  cat(sprintf("Study %s completed \n", study$article))
+}
+
+results_df <- do.call(rbind, results_list)
+# acc_rate_df <- do.call(rbind, acc_rate_list)
+
+results_df <- as.data.frame(results_df)
+results_df[] <- lapply(results_df, function(x) if(is.numeric(x)) round(x, 4) else x)
+```
+
